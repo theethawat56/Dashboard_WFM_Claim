@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Environment (never commit secrets)
+.env
+.env.local
+.env*.local
+web/.env.local
+
+# Build & Next.js
+web/.next/
+web/out/
+
+# Debug & misc
+.DS_Store
+*.log
+npm-debug.log*

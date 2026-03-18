@@ -1,0 +1,25 @@
+{
+  "name": "dashboard-wfm-pipeline",
+  "version": "1.0.0",
+  "description": "Data pipeline: fetch task data from search API and store in Turso (libSQL)",
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "ts-node src/index.ts",
+    "migrate": "ts-node src/migrate.ts",
+    "db:setup": "node scripts/setup-tables.js",
+    "check": "ts-node src/check.ts",
+    "sync:historical": "FORCE_HISTORICAL=true ts-node src/sync.ts",
+    "sync:daily": "ts-node -e \"require('./src/sync').runDailySync().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); })\""
+  },
+  "dependencies": {
+    "@libsql/client": "^0.14.0",
+    "dotenv": "^16.4.5",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "@types/node-cron": "^3.0.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  }
+}
