@@ -10,6 +10,7 @@ export interface TaskRow {
   product_model: string | null;
   product_serial: string | null;
   sku: string | null;
+  issue_description: string | null;
   issue_group: string | null;
   create_date: string | null;
   timestamp: number | null;
@@ -24,12 +25,16 @@ export function TaskListTable({
   total,
   limit,
   onPageChange,
+  claimedSelected,
+  onToggleClaimed,
 }: {
   rows: TaskRow[];
   page: number;
   total: number;
   limit: number;
   onPageChange: (p: number) => void;
+  claimedSelected: Set<string>;
+  onToggleClaimed: (row: TaskRow) => void;
 }) {
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
@@ -68,7 +73,22 @@ export function TaskListTable({
                 className="border-b border-slate-100 hover:bg-slate-50"
               >
                 <td className="px-4 py-2 font-mono text-slate-800">
-                  {r.task_number}
+                  <div className="flex flex-col gap-2">
+                    <span>{r.task_number}</span>
+                    <button
+                      type="button"
+                      onClick={() => onToggleClaimed(r)}
+                      className={[
+                        "inline-flex h-7 items-center justify-center rounded-md border px-2 text-xs font-medium",
+                        claimedSelected.has(r.task_number)
+                          ? "border-[#E65100] bg-[#E65100] text-white hover:bg-[#C44E00]"
+                          : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
+                      ].join(" ")}
+                      title="คลิกเพื่อเลือก/ยกเลิก Claimed"
+                    >
+                      Claimed
+                    </button>
+                  </div>
                 </td>
                 <td className="px-4 py-2">
                   <Badge

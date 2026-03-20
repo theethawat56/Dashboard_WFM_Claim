@@ -41,6 +41,7 @@ export interface TaskListRow {
   product_model: string | null;
   product_serial: string | null;
   sku: string | null;
+  issue_description: string | null;
   issue_group: string | null;
   create_date: string | null;
   timestamp: number | null;

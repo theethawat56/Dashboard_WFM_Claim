@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { KpiCards } from "./_components/KpiCards";
 import type { SummaryData } from "./_components/KpiCards";
 import { ModelBreakdownTable } from "./_components/ModelBreakdownTable";
@@ -17,6 +18,7 @@ import type { TaskRow } from "./_components/TaskListTable";
 import { EvidenceExportPanel } from "./_components/EvidenceExportPanel";
 import type { EvidenceSummary } from "./_components/EvidenceExportPanel";
 import { ExportButtons } from "./_components/ExportButtons";
+import type { UnclaimedClaimsSummary } from "@/lib/queries/unclaimedClaims";
 
 const TYPE_OPTIONS = [
   { value: "all", label: "ทั้งหมด" },
@@ -44,6 +46,9 @@ const RECLAIM_OPTIONS = [
 
 export default function DashboardPage() {
   const [apiError, setApiError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "bymodel" | "tasks" | "evidence"
+  >("overview");
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [trend, setTrend] = useState<{ month: string; repair_count: number; claim_count: number; reclaim_count: number; total: number }[]>([]);
   const [symptoms, setSymptoms] = useState<{ issue_group: string; frequency: number; related_skus: string | null }[]>([]);
@@ -59,6 +64,63 @@ export default function DashboardPage() {
   const [evidenceLoading, setEvidenceLoading] = useState(false);
   const [selectedSku, setSelectedSku] = useState<string>("");
   const [selectedSkus, setSelectedSkus] = useState<Set<string>>(new Set());
+
+  // Multi-select for "Claimed with Factory" report (Tab 3 -> Tab 1)
+  const [claimedSelectedTaskNumbers, setClaimedSelectedTaskNumbers] = useState<
+    Set<string>
+  >(new Set());
+  const [claimedSelectedTasks, setClaimedSelectedTasks] = useState<
+    Record<string, TaskRow>
+  >({});
+
+  const [unclaimedSummary, setUnclaimedSummary] =
+    useState<UnclaimedClaimsSummary | null>(null);
+  const [unclaimedLoading, setUnclaimedLoading] = useState(false);
+
+  const toggleClaimedTask = useCallback((row: TaskRow) => {
+    setClaimedSelectedTaskNumbers((prev) => {
+      const next = new Set(prev);
+      if (next.has(row.task_number)) {
+        next.delete(row.task_number);
+      } else {
+        next.add(row.task_number);
+      }
+      return next;
+    });
+
+    setClaimedSelectedTasks((prev) => {
+      if (prev[row.task_number]) {
+        const { [row.task_number]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [row.task_number]: row };
+    });
+  }, []);
+
+  useEffect(() => {
+    // Compare "claimed already made" vs "unclaimed claims" (6 months) on Overview
+    const run = async () => {
+      try {
+        setUnclaimedLoading(true);
+        const exclude = Array.from(claimedSelectedTaskNumbers.values());
+        const params = new URLSearchParams();
+        params.set("months", "6");
+        if (exclude.length) params.set("exclude", exclude.join(","));
+        const res = await fetch(`/api/dashboard/unclaimed-claims?${params.toString()}`);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err?.error ?? `Unclaimed: ${res.status}`);
+        }
+        setUnclaimedSummary((await res.json()) as UnclaimedClaimsSummary);
+      } catch (e) {
+        console.error(e);
+        setUnclaimedSummary(null);
+      } finally {
+        setUnclaimedLoading(false);
+      }
+    };
+    run();
+  }, [claimedSelectedTaskNumbers]);
 
   // Filters for By Model tab
   const [modelSearch, setModelSearch] = useState("");
@@ -257,6 +319,43 @@ export default function DashboardPage() {
       )
     : byModel;
 
+  const claimedTasks = Object.values(claimedSelectedTasks);
+  const claimedReport = (() => {
+    if (claimedTasks.length === 0) {
+      return {
+        total: 0,
+        reclaimCount: 0,
+        unfixedCount: 0,
+        uniqueSkuCount: 0,
+        topIssueGroup: "",
+      };
+    }
+
+    const reclaimCount = claimedTasks.filter((t) => t.is_reclaim === 1).length;
+    const unfixedCount = claimedTasks.filter((t) => t.is_unfixed === 1).length;
+    const uniqueSkuCount = new Set(
+      claimedTasks.map((t) => (t.sku ?? "").trim()).filter(Boolean)
+    ).size;
+
+    const freq: Record<string, number> = {};
+    for (const t of claimedTasks) {
+      // For "Claimed with Factory" we prefer the detailed issue description
+      const g = (t.issue_description ?? t.issue_group ?? "").trim();
+      if (!g) continue;
+      freq[g] = (freq[g] ?? 0) + 1;
+    }
+    const topIssueGroup =
+      Object.entries(freq).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+
+    return {
+      total: claimedTasks.length,
+      reclaimCount,
+      unfixedCount,
+      uniqueSkuCount,
+      topIssueGroup,
+    };
+  })();
+
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white px-6 py-4">
@@ -280,7 +379,11 @@ export default function DashboardPage() {
       )}
 
       <main className="mx-auto max-w-[1440px] px-4 py-6 lg:px-6">
-        <Tabs defaultValue="overview" className="w-full">
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as typeof activeTab)}
+          className="w-full"
+        >
           <TabsList className="mb-4 w-full justify-start overflow-x-auto">
             <TabsTrigger value="overview">ภาพรวม</TabsTrigger>
             <TabsTrigger value="bymodel">แยกตามรุ่น</TabsTrigger>
@@ -290,6 +393,164 @@ export default function DashboardPage() {
 
           <TabsContent value="overview" className="space-y-6">
             <KpiCards data={summary} />
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">
+                  รายงาน Claimed with Factory (งานที่เลือก)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {claimedTasks.length === 0 ? (
+                  <p className="text-sm text-slate-600">
+                    ไปที่แท็บ <span className="font-medium">รายการงาน</span> แล้วกดปุ่ม{" "}
+                    <span className="font-medium">Claimed</span> เพื่อเลือกงานที่ต้องการ จากนั้นกดปุ่ม{" "}
+                    <span className="font-medium">สร้างรายงาน</span> เพื่อแสดงบนหน้านี้
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap gap-3 text-sm text-slate-700">
+                      <span>
+                        งานที่เลือก: <b>{claimedReport.total}</b> รายการ
+                      </span>
+                      <span>
+                        เคลมซ้ำ: <b>{claimedReport.reclaimCount}</b> รายการ
+                      </span>
+                      <span>
+                        ซ่อมแล้วไม่หาย: <b>{claimedReport.unfixedCount}</b> รายการ
+                      </span>
+                      <span>
+                        จำนวน SKU: <b>{claimedReport.uniqueSkuCount}</b>
+                      </span>
+                    </div>
+                    {claimedReport.topIssueGroup && (
+                      <p className="text-sm text-slate-600">
+                        อาการที่พบมากที่สุด:{" "}
+                        <span className="font-medium">{claimedReport.topIssueGroup}</span>
+                      </p>
+                    )}
+                    {claimedTasks.length > 0 && (
+                      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                        <table className="w-full text-left text-sm">
+                          <thead className="border-b border-slate-200 bg-slate-50">
+                            <tr>
+                              <th className="px-3 py-2 font-medium text-slate-700">เลขงาน</th>
+                              <th className="px-3 py-2 font-medium text-slate-700">SKU</th>
+                              <th className="px-3 py-2 font-medium text-slate-700">รุ่น</th>
+                              <th className="px-3 py-2 font-medium text-slate-700">Serial</th>
+                              <th className="px-3 py-2 font-medium text-slate-700">อาการ</th>
+                              <th className="px-3 py-2 font-medium text-slate-700">วันที่</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {claimedTasks
+                              .slice()
+                              .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
+                              .slice(0, 50)
+                              .map((t) => (
+                                <tr
+                                  key={t.task_number}
+                                  className="border-b border-slate-100 hover:bg-slate-50"
+                                >
+                                  <td className="px-3 py-2 font-mono text-slate-800">
+                                    {t.task_number}
+                                  </td>
+                                  <td className="px-3 py-2 font-mono text-slate-700">
+                                    {t.sku ?? "-"}
+                                  </td>
+                                  <td className="px-3 py-2 text-slate-700">
+                                    {t.product_model ?? "-"}
+                                  </td>
+                                  <td className="px-3 py-2 text-slate-700">
+                                    {t.product_serial ?? "-"}
+                                  </td>
+                                  <td className="max-w-[220px] truncate px-3 py-2 text-slate-600">
+                                    {((t.issue_description ?? t.issue_group) ?? "")
+                                      .slice(0, 60)}
+                                    {((t.issue_description ?? t.issue_group) ?? "").length >
+                                      60
+                                      ? "…"
+                                      : ""}
+                                  </td>
+                                  <td className="px-3 py-2 text-slate-600">
+                                    {t.create_date ?? "-"}
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setClaimedSelectedTaskNumbers(new Set());
+                          setClaimedSelectedTasks({});
+                        }}
+                      >
+                        ล้างการเลือก
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">
+                  เปรียบเทียบ: Unclaimed Claims (6 เดือนล่าสุด)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {unclaimedLoading ? (
+                  <p className="text-sm text-slate-600">กำลังโหลดข้อมูล...</p>
+                ) : unclaimedSummary ? (
+                  <>
+                    <div className="flex flex-wrap gap-3 text-sm text-slate-700">
+                      <span>
+                        Claimed (งานที่เลือก):{" "}
+                        <b>{claimedReport.total}</b> รายการ
+                      </span>
+                      <span>
+                        Claimed ซ้ำ: <b>{claimedReport.reclaimCount}</b> รายการ
+                      </span>
+                      <span>
+                        Claimed ไม่หาย: <b>{claimedReport.unfixedCount}</b> รายการ
+                      </span>
+                      <span>
+                        Claimed จำนวน SKU: <b>{claimedReport.uniqueSkuCount}</b>
+                      </span>
+                      <span>
+                        Unclaimed: <b>{unclaimedSummary.total}</b> รายการ
+                      </span>
+                      <span>
+                        เคลมซ้ำ: <b>{unclaimedSummary.reclaim_count}</b> รายการ
+                      </span>
+                      <span>
+                        ซ่อมแล้วไม่หาย: <b>{unclaimedSummary.unfixed_count}</b> รายการ
+                      </span>
+                      <span>
+                        จำนวน SKU: <b>{unclaimedSummary.unique_sku_count}</b>
+                      </span>
+                    </div>
+                    {unclaimedSummary.top_issue_description && (
+                      <p className="text-sm text-slate-600">
+                        อาการที่พบมากที่สุด:{" "}
+                        <span className="font-medium">
+                          {unclaimedSummary.top_issue_description}
+                        </span>
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-slate-600">
+                    ไม่มีข้อมูล unclaimed ในช่วง 6 เดือนล่าสุด
+                  </p>
+                )}
+              </CardContent>
+            </Card>
             <div className="grid gap-6 lg:grid-cols-2">
               <Card>
                 <CardHeader>
@@ -375,6 +636,39 @@ export default function DashboardPage() {
           </TabsContent>
 
           <TabsContent value="tasks" className="space-y-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">
+                  Claimed with Factory (เลือกงาน)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-slate-600">
+                  จำนวนงานที่เลือก: <b>{claimedTasks.length}</b> รายการ
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    disabled={claimedTasks.length === 0}
+                    onClick={() => setActiveTab("overview")}
+                  >
+                    สร้างรายงานบนหน้า ภาพรวม
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={claimedTasks.length === 0}
+                    onClick={() => {
+                      setClaimedSelectedTaskNumbers(new Set());
+                      setClaimedSelectedTasks({});
+                    }}
+                  >
+                    ล้างการเลือก
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
             <FilterBar
               searchPlaceholder="เลขงาน, ลูกค้า, รุ่น, Serial, SKU..."
               searchValue={taskSearch}
@@ -428,6 +722,8 @@ export default function DashboardPage() {
               total={taskResult.total}
               limit={taskResult.limit}
               onPageChange={setTaskPage}
+              claimedSelected={claimedSelectedTaskNumbers}
+              onToggleClaimed={toggleClaimedTask}
             />
           </TabsContent>
 

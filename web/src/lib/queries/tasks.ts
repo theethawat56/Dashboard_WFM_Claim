@@ -85,6 +85,7 @@ export async function getTasks(filters: TaskListFilters = {}): Promise<TaskListR
         td.product_model,
         td.product_serial,
         td.sku,
+        td.issue_description,
         td.issue_group,
         td.create_date,
         td.ref_task_numbers
@@ -102,6 +103,7 @@ export async function getTasks(filters: TaskListFilters = {}): Promise<TaskListR
     product_model: row.product_model != null ? String(row.product_model) : null,
     product_serial: row.product_serial != null ? String(row.product_serial) : null,
     sku: row.sku != null ? String(row.sku) : null,
+    issue_description: row.issue_description != null ? String(row.issue_description) : null,
     issue_group: row.issue_group != null ? String(row.issue_group) : null,
     create_date: row.create_date != null ? String(row.create_date) : null,
     timestamp: row.timestamp != null ? Number(row.timestamp) : null,
