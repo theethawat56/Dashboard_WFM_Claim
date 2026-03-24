@@ -29,6 +29,16 @@ export async function hasSuccessfulHistoricalSync(): Promise<boolean> {
   return r.rows.length > 0;
 }
 
+/** Returns the ISO timestamp of the last successful daily sync, or null if none. */
+export async function getLastDailySyncTime(): Promise<string | null> {
+  const r = await db.execute({
+    sql: `SELECT finished_at FROM sync_log WHERE sync_type = ? AND status = ? ORDER BY finished_at DESC LIMIT 1`,
+    args: ["daily", "success"],
+  });
+  if (r.rows.length === 0) return null;
+  return r.rows[0].finished_at as string;
+}
+
 function collectProductIds(tasks: Task[]): string[] {
   const ids = new Set<string>();
   for (const t of tasks) {
@@ -125,7 +135,7 @@ export async function runHistoricalSync(): Promise<void> {
         sync_type, workflow_ids, started_at, finished_at,
         repair_fetched, claim_fetched, total_upserted, status, error_message,
         sku_fetched, sku_failed
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         "historical",
         "ulMEhA,OC8LiE",
@@ -201,7 +211,7 @@ export async function runDailySync(): Promise<void> {
         sync_type, workflow_ids, started_at, finished_at,
         repair_fetched, claim_fetched, total_upserted, status, error_message,
         sku_fetched, sku_failed
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         "daily",
         "ulMEhA,OC8LiE",
