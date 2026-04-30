@@ -10,6 +10,12 @@ import { ModelBreakdownTable } from "./_components/ModelBreakdownTable";
 import { MonthlyTrendChart } from "./_components/MonthlyTrendChart";
 import { SymptomFrequencyChart } from "./_components/SymptomFrequencyChart";
 import { DonutChartRepairClaim } from "./_components/DonutChartRepairClaim";
+import { DailyTrendChart } from "./_components/DailyTrendChart";
+import { DailyTopSkusCard } from "./_components/DailyTopSkusCard";
+import { ClaimCompensationDialog } from "./_components/ClaimCompensationDialog";
+import { ClaimCompTab } from "./_components/ClaimCompTab";
+import { ClaimSummaryCard } from "./_components/ClaimSummaryCard";
+import type { DailyTrendRow, DailyTopSkuRow, ClaimCompOverall } from "@/types/dashboard";
 import { FilterBar } from "./_components/FilterBar";
 import { ByModelTable } from "./_components/ByModelTable";
 import type { ByModelRow } from "./_components/ByModelTable";
@@ -47,7 +53,7 @@ const RECLAIM_OPTIONS = [
 export default function DashboardPage() {
   const [apiError, setApiError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<
-    "overview" | "bymodel" | "tasks" | "evidence"
+    "overview" | "bymodel" | "tasks" | "evidence" | "claims"
   >("overview");
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [trend, setTrend] = useState<{ month: string; repair_count: number; claim_count: number; reclaim_count: number; total: number }[]>([]);
@@ -64,6 +70,22 @@ export default function DashboardPage() {
   const [evidenceLoading, setEvidenceLoading] = useState(false);
   const [selectedSku, setSelectedSku] = useState<string>("");
   const [selectedSkus, setSelectedSkus] = useState<Set<string>>(new Set());
+  const [dailyTrend, setDailyTrend] = useState<DailyTrendRow[]>([]);
+  const [dailyDays, setDailyDays] = useState(30);
+  const [dailyTopSkus, setDailyTopSkus] = useState<DailyTopSkuRow[]>([]);
+  const [topSkuDate, setTopSkuDate] = useState(
+    new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" })
+  );
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+
+  // Claim compensation state
+  const [compMap, setCompMap] = useState<Record<string, number>>({});
+  const [compOverall, setCompOverall] = useState<ClaimCompOverall | null>(null);
+  const [compDialogSku, setCompDialogSku] = useState<string | null>(null);
+  const [compDialogModel, setCompDialogModel] = useState("");
+  const [compDialogPreTask, setCompDialogPreTask] = useState<string | undefined>();
+  const [compBySku, setCompBySku] = useState<Record<string, { total_amount: number; compensated_tasks: number }>>({});
 
   // Multi-select for "Claimed with Factory" report (Tab 3 -> Tab 1)
   const [claimedSelectedTaskNumbers, setClaimedSelectedTaskNumbers] = useState<
@@ -125,7 +147,8 @@ export default function DashboardPage() {
   // Filters for By Model tab
   const [modelSearch, setModelSearch] = useState("");
   const [modelType, setModelType] = useState("all");
-  const [modelPeriod, setModelPeriod] = useState("all");
+  const [modelDateFrom, setModelDateFrom] = useState("");
+  const [modelDateTo, setModelDateTo] = useState("");
   const [modelRisk, setModelRisk] = useState("all");
 
   // Filters for Task List tab
@@ -135,6 +158,8 @@ export default function DashboardPage() {
   const [taskReclaim, setTaskReclaim] = useState("");
   const [taskFrom, setTaskFrom] = useState("");
   const [taskTo, setTaskTo] = useState("");
+  const [taskWarrantyFrom, setTaskWarrantyFrom] = useState("");
+  const [taskWarrantyTo, setTaskWarrantyTo] = useState("");
   const [taskPage, setTaskPage] = useState(1);
 
   const fetchSummary = useCallback(async () => {
@@ -171,11 +196,57 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const fetchDailyTrend = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/dashboard/daily-trend?days=${dailyDays}`);
+      if (res.ok) setDailyTrend(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  }, [dailyDays]);
+
+  const fetchDailyTopSkus = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/dashboard/daily-top-skus?date=${topSkuDate}&limit=5`);
+      if (res.ok) setDailyTopSkus(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  }, [topSkuDate]);
+
+  const fetchCompMap = useCallback(async () => {
+    try {
+      const res = await fetch("/api/claim-compensations");
+      if (res.ok) setCompMap(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  const fetchCompOverall = useCallback(async () => {
+    try {
+      const [overallRes, bySkuRes] = await Promise.all([
+        fetch("/api/claim-compensations/summary"),
+        fetch("/api/claim-compensations?view=sku-summary"),
+      ]);
+      if (overallRes.ok) setCompOverall(await overallRes.json());
+      if (bySkuRes.ok) {
+        const rows: { sku: string; total_amount: number; compensated_tasks: number }[] = await bySkuRes.json();
+        const m: Record<string, { total_amount: number; compensated_tasks: number }> = {};
+        for (const r of rows) m[r.sku] = { total_amount: r.total_amount, compensated_tasks: r.compensated_tasks };
+        setCompBySku(m);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
   const fetchByModel = useCallback(async () => {
     try {
       const params = new URLSearchParams();
       if (modelType !== "all") params.set("type", modelType);
-      if (modelPeriod !== "all") params.set("months", modelPeriod);
+      if (modelDateFrom) params.set("dateFrom", modelDateFrom);
+      if (modelDateTo) params.set("dateTo", modelDateTo);
       if (modelRisk !== "all") params.set("risk", modelRisk);
       if (modelSearch.trim()) params.set("sku", modelSearch.trim());
       const res = await fetch(`/api/dashboard/by-model?${params}`);
@@ -186,7 +257,7 @@ export default function DashboardPage() {
     } catch (e) {
       console.error(e);
     }
-  }, [modelSearch, modelType, modelPeriod, modelRisk]);
+  }, [modelSearch, modelType, modelDateFrom, modelDateTo, modelRisk]);
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -198,13 +269,25 @@ export default function DashboardPage() {
       if (taskReclaim !== "all" && taskReclaim) params.set("reclaim", taskReclaim);
       if (taskFrom) params.set("from", taskFrom);
       if (taskTo) params.set("to", taskTo);
+      if (taskWarrantyFrom) params.set("warrantyFrom", taskWarrantyFrom);
+      if (taskWarrantyTo) params.set("warrantyTo", taskWarrantyTo);
       if (taskSearch.trim()) params.set("search", taskSearch.trim());
       const res = await fetch(`/api/dashboard/tasks?${params}`);
       if (res.ok) setTaskResult(await res.json());
     } catch (e) {
       console.error(e);
     }
-  }, [taskPage, taskType, taskSku, taskReclaim, taskFrom, taskTo, taskSearch]);
+  }, [
+    taskPage,
+    taskType,
+    taskSku,
+    taskReclaim,
+    taskFrom,
+    taskTo,
+    taskWarrantyFrom,
+    taskWarrantyTo,
+    taskSearch,
+  ]);
 
   const fetchSkuList = useCallback(async () => {
     try {
@@ -287,11 +370,50 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const handleResync = useCallback(async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await fetch("/api/sync/resync", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setSyncMsg(
+          `Sync สำเร็จ — ซ่อม ${data.repairFetched} รายการ, เคลม ${data.claimFetched} รายการ, อัพเดท ${data.totalUpserted} รายการ`
+        );
+        fetchSummary();
+        fetchTrend();
+        fetchDailyTrend();
+        fetchDailyTopSkus();
+        fetchByModel();
+        fetchSymptoms();
+      } else {
+        setSyncMsg(`Sync ผิดพลาด: ${data.error}`);
+      }
+    } catch (e) {
+      setSyncMsg(`Sync ผิดพลาด: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSyncing(false);
+    }
+  }, [fetchSummary, fetchTrend, fetchDailyTrend, fetchDailyTopSkus, fetchByModel, fetchSymptoms]);
+
   useEffect(() => {
     fetchSummary();
     fetchTrend();
     fetchSymptoms();
   }, [fetchSummary, fetchTrend, fetchSymptoms]);
+
+  useEffect(() => {
+    fetchDailyTrend();
+  }, [fetchDailyTrend]);
+
+  useEffect(() => {
+    fetchDailyTopSkus();
+  }, [fetchDailyTopSkus]);
+
+  useEffect(() => {
+    fetchCompMap();
+    fetchCompOverall();
+  }, [fetchCompMap, fetchCompOverall]);
 
   useEffect(() => {
     fetchByModel();
@@ -359,12 +481,48 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white px-6 py-4">
-        <h1 className="text-xl font-semibold text-slate-900">
-          {process.env.NEXT_PUBLIC_APP_TITLE ?? "Repair & Claim Dashboard"}
-        </h1>
-        <p className="text-sm text-slate-500">
-          หลักฐานการเคลมโรงงาน — สถิติงานซ่อมและเคลม
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-semibold text-slate-900">
+              {process.env.NEXT_PUBLIC_APP_TITLE ?? "Repair & Claim Dashboard"}
+            </h1>
+            <p className="text-sm text-slate-500">
+              หลักฐานการเคลมโรงงาน — สถิติงานซ่อมและเคลม
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-1">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={syncing}
+              onClick={handleResync}
+              className="whitespace-nowrap"
+            >
+              {syncing ? (
+                <>
+                  <svg className="mr-1.5 h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  กำลัง Sync...
+                </>
+              ) : (
+                <>
+                  <svg className="mr-1.5 h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0115-6.7L21 8" />
+                    <path d="M3 22v-6h6" /><path d="M21 12a9 9 0 01-15 6.7L3 16" />
+                  </svg>
+                  Re-Sync (30 วัน)
+                </>
+              )}
+            </Button>
+            {syncMsg && (
+              <p className={`max-w-xs text-right text-xs ${syncMsg.includes("ผิดพลาด") ? "text-red-600" : "text-green-600"}`}>
+                {syncMsg}
+              </p>
+            )}
+          </div>
+        </div>
       </header>
 
       {apiError && (
@@ -388,11 +546,36 @@ export default function DashboardPage() {
             <TabsTrigger value="overview">ภาพรวม</TabsTrigger>
             <TabsTrigger value="bymodel">แยกตามรุ่น</TabsTrigger>
             <TabsTrigger value="tasks">รายการงาน</TabsTrigger>
+            <TabsTrigger value="claims">ผลเคลม</TabsTrigger>
             <TabsTrigger value="evidence">หลักฐานต่อรอง</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
             <KpiCards data={summary} />
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">
+                  สินค้า Top 5 ที่มีอัตราซ่อม/เคลมสูงสุดประจำวัน
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <DailyTopSkusCard
+                  data={dailyTopSkus}
+                  date={topSkuDate}
+                  onDateChange={setTopSkuDate}
+                />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">
+                  สรุปผลเคลมจากโรงงาน
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ClaimSummaryCard data={compOverall} />
+              </CardContent>
+            </Card>
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">
@@ -580,6 +763,20 @@ export default function DashboardPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">
+                  แนวโน้มรายวัน — ซ่อม / เคลม / เคลมซ้ำ
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <DailyTrendChart
+                  data={dailyTrend}
+                  days={dailyDays}
+                  onDaysChange={setDailyDays}
+                />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
                   แนวโน้มรายเดือน (18 เดือนล่าสุด)
                 </CardTitle>
               </CardHeader>
@@ -607,31 +804,35 @@ export default function DashboardPage() {
               typeOptions={TYPE_OPTIONS}
               typeValue={modelType}
               onTypeChange={setModelType}
-              periodOptions={PERIOD_OPTIONS}
-              periodValue={modelPeriod}
-              onPeriodChange={setModelPeriod}
               riskOptions={RISK_OPTIONS}
               riskValue={modelRisk}
               onRiskChange={setModelRisk}
+              fromValue={modelDateFrom}
+              toValue={modelDateTo}
+              onFromChange={setModelDateFrom}
+              onToChange={setModelDateTo}
               showSearch={true}
               showType={true}
-              showPeriod={true}
+              showPeriod={false}
               showRisk={true}
+              showDateRange={true}
               onReset={() => {
                 setModelSearch("");
                 setModelType("all");
-                setModelPeriod("all");
+                setModelDateFrom("");
+                setModelDateTo("");
                 setModelRisk("all");
               }}
             />
             <ByModelTable
               rows={filteredByModel}
-              onExportExcel={(sku) =>
-                window.open(
-                  `/api/export/excel?skus=${encodeURIComponent(sku)}`,
-                  "_blank"
-                )
-              }
+              onExportExcel={(sku, dateFrom, dateTo) => {
+                const params = new URLSearchParams({ skus: sku });
+                if (dateFrom) params.set("dateFrom", dateFrom);
+                if (dateTo) params.set("dateTo", dateTo);
+                window.open(`/api/export/excel?${params.toString()}`, "_blank");
+              }}
+              compBySku={compBySku}
             />
           </TabsContent>
 
@@ -670,7 +871,7 @@ export default function DashboardPage() {
             </Card>
 
             <FilterBar
-              searchPlaceholder="เลขงาน, ลูกค้า, รุ่น, Serial, SKU..."
+              searchPlaceholder="เลขงาน, ลูกค้า, รุ่น, Serial, SKU, Warranty ID..."
               searchValue={taskSearch}
               onSearchChange={setTaskSearch}
               typeOptions={TYPE_OPTIONS}
@@ -683,10 +884,15 @@ export default function DashboardPage() {
               toValue={taskTo}
               onFromChange={setTaskFrom}
               onToChange={setTaskTo}
+              warrantyFromValue={taskWarrantyFrom}
+              warrantyToValue={taskWarrantyTo}
+              onWarrantyFromChange={setTaskWarrantyFrom}
+              onWarrantyToChange={setTaskWarrantyTo}
               showSearch={true}
               showType={true}
               showSku={true}
               showDateRange={true}
+              showWarrantyRange={true}
               onReset={() => {
                 setTaskSearch("");
                 setTaskType("all");
@@ -694,6 +900,8 @@ export default function DashboardPage() {
                 setTaskReclaim("all");
                 setTaskFrom("");
                 setTaskTo("");
+                setTaskWarrantyFrom("");
+                setTaskWarrantyTo("");
                 setTaskPage(1);
               }}
             />
@@ -724,7 +932,18 @@ export default function DashboardPage() {
               onPageChange={setTaskPage}
               claimedSelected={claimedSelectedTaskNumbers}
               onToggleClaimed={toggleClaimedTask}
+              compensationMap={compMap}
+              onOpenCompensation={(row) => {
+                if (!row.sku) return;
+                setCompDialogSku(row.sku);
+                setCompDialogModel(row.product_model ?? "");
+                setCompDialogPreTask(row.task_number);
+              }}
             />
+          </TabsContent>
+
+          <TabsContent value="claims" className="space-y-6">
+            <ClaimCompTab />
           </TabsContent>
 
           <TabsContent value="evidence" className="space-y-6">
@@ -786,6 +1005,22 @@ export default function DashboardPage() {
           </TabsContent>
         </Tabs>
       </main>
+
+      {compDialogSku && (
+        <ClaimCompensationDialog
+          sku={compDialogSku}
+          model={compDialogModel}
+          preSelectTaskNumber={compDialogPreTask}
+          onClose={() => {
+            setCompDialogSku(null);
+            setCompDialogPreTask(undefined);
+          }}
+          onSaved={() => {
+            fetchCompMap();
+            fetchCompOverall();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -27,6 +27,14 @@ CREATE TABLE IF NOT EXISTS task_details (
   shipping_option TEXT,
   create_date TEXT,
   ref_numbers TEXT,
+  customer_guid TEXT,
+  warranty_id TEXT,
+  warranty_start_date TEXT,
+  warranty_start_ts INTEGER,
+  warranty_period TEXT,
+  warranty_order_number TEXT,
+  warranty_serial TEXT,
+  days_to_repair INTEGER,
   FOREIGN KEY (task_id) REFERENCES tasks(id)
 );
 
@@ -48,4 +56,20 @@ CREATE TABLE IF NOT EXISTS auto_sync_state (
   key TEXT PRIMARY KEY,
   value TEXT,
   updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS claim_comp_batches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sku TEXT NOT NULL,
+  comp_type TEXT NOT NULL,
+  amount REAL DEFAULT 0,
+  note TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS claim_comp_batch_tasks (
+  batch_id INTEGER NOT NULL,
+  task_id TEXT NOT NULL,
+  task_number TEXT NOT NULL,
+  FOREIGN KEY (batch_id) REFERENCES claim_comp_batches(id) ON DELETE CASCADE
 );

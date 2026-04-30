@@ -12,11 +12,26 @@ const CSV_COLUMNS = [
   "issue_description",
   "issue_group",
   "create_date",
+  "warranty_id",
+  "warranty_start_date",
+  "warranty_period",
+  "days_to_repair",
   "is_reclaim",
   "ref_task_numbers",
   "claim_type",
   "is_unfixed",
+  "customer_guid",
 ] as const;
+
+function tsToIsoDate(ts: number | null): string {
+  if (ts == null || !Number.isFinite(ts)) return "";
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
 
 export function generateCsvFromEvidence(rows: EvidenceRow[]): string {
   const data = rows.map((r) => ({
@@ -29,11 +44,18 @@ export function generateCsvFromEvidence(rows: EvidenceRow[]): string {
     serial_number: r.product_serial ?? "",
     issue_description: r.issue_description ?? "",
     issue_group: r.issue_group ?? "",
-    create_date: r.create_date ?? "",
+    create_date: r.create_date && r.create_date.trim() !== ""
+      ? r.create_date
+      : tsToIsoDate(r.timestamp),
+    warranty_id: r.warranty_id ?? "",
+    warranty_start_date: r.warranty_start_date ?? "",
+    warranty_period: r.warranty_period ?? "",
+    days_to_repair: r.days_to_repair ?? "",
     is_reclaim: r.is_reclaim,
     ref_task_numbers: r.ref_task_numbers ?? "",
     claim_type: r.claim_type ?? "",
     is_unfixed: r.is_unfixed,
+    customer_guid: r.customer_guid ?? "",
   }));
   return Papa.unparse(data, { columns: [...CSV_COLUMNS] });
 }

@@ -63,11 +63,21 @@ const NEW_COLUMNS: Array<{ table: string; column: string; sql: string }> = [
   { table: "task_details", column: "is_reclaim", sql: "ALTER TABLE task_details ADD COLUMN is_reclaim INTEGER DEFAULT 0" },
   { table: "task_details", column: "ref_task_numbers", sql: "ALTER TABLE task_details ADD COLUMN ref_task_numbers TEXT DEFAULT ''" },
   { table: "task_details", column: "claim_type", sql: "ALTER TABLE task_details ADD COLUMN claim_type TEXT DEFAULT ''" },
+  { table: "task_details", column: "customer_guid", sql: "ALTER TABLE task_details ADD COLUMN customer_guid TEXT" },
+  { table: "task_details", column: "warranty_id", sql: "ALTER TABLE task_details ADD COLUMN warranty_id TEXT" },
+  { table: "task_details", column: "warranty_start_date", sql: "ALTER TABLE task_details ADD COLUMN warranty_start_date TEXT" },
+  { table: "task_details", column: "warranty_start_ts", sql: "ALTER TABLE task_details ADD COLUMN warranty_start_ts INTEGER" },
+  { table: "task_details", column: "warranty_period", sql: "ALTER TABLE task_details ADD COLUMN warranty_period TEXT" },
+  { table: "task_details", column: "warranty_order_number", sql: "ALTER TABLE task_details ADD COLUMN warranty_order_number TEXT" },
+  { table: "task_details", column: "warranty_serial", sql: "ALTER TABLE task_details ADD COLUMN warranty_serial TEXT" },
+  { table: "task_details", column: "days_to_repair", sql: "ALTER TABLE task_details ADD COLUMN days_to_repair INTEGER" },
   { table: "sync_log", column: "sku_fetched", sql: "ALTER TABLE sync_log ADD COLUMN sku_fetched INTEGER DEFAULT 0" },
   { table: "sync_log", column: "sku_failed", sql: "ALTER TABLE sync_log ADD COLUMN sku_failed INTEGER DEFAULT 0" },
+  { table: "sync_log", column: "warranty_fetched", sql: "ALTER TABLE sync_log ADD COLUMN warranty_fetched INTEGER DEFAULT 0" },
+  { table: "sync_log", column: "warranty_failed", sql: "ALTER TABLE sync_log ADD COLUMN warranty_failed INTEGER DEFAULT 0" },
 ];
 
-const ALLOWED_TABLES = new Set(["task_details", "sync_log"]);
+const ALLOWED_TABLES = new Set(["task_details", "sync_log", "tasks"]);
 
 async function getExistingColumns(tableName: string): Promise<Set<string>> {
   const names = new Set<string>();

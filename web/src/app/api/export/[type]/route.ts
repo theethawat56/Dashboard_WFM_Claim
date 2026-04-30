@@ -95,6 +95,10 @@ export async function GET(
   const { searchParams } = new URL(request.url);
   const sku = searchParams.get("sku");
   const skusParam = searchParams.get("skus"); // comma-separated for excel
+  const dateFrom = searchParams.get("dateFrom") ?? undefined;
+  const dateTo = searchParams.get("dateTo") ?? undefined;
+  const warrantyFrom = searchParams.get("warrantyFrom") ?? undefined;
+  const warrantyTo = searchParams.get("warrantyTo") ?? undefined;
 
   try {
     if (exportType === "csv") {
@@ -104,7 +108,12 @@ export async function GET(
           { status: 400 }
         );
       }
-      const rows = await getEvidenceBySku(sku.trim());
+      const rows = await getEvidenceBySku(sku.trim(), {
+        dateFrom,
+        dateTo,
+        warrantyFrom,
+        warrantyTo,
+      });
       const csv = generateCsvFromEvidence(rows);
       const filename = getCsvFilename(sku.trim());
       return new NextResponse(csv, {
@@ -170,7 +179,12 @@ export async function GET(
       const list = skuList.length > 0 ? skuList : modelStats.map((m) => m.sku).slice(0, 50);
       const evidenceBySku: Record<string, Awaited<ReturnType<typeof getEvidenceBySku>>> = {};
       for (const s of list) {
-        evidenceBySku[s] = await getEvidenceBySku(s);
+        evidenceBySku[s] = await getEvidenceBySku(s, {
+          dateFrom,
+          dateTo,
+          warrantyFrom,
+          warrantyTo,
+        });
       }
       const modelStatsFiltered =
         skuList.length > 0

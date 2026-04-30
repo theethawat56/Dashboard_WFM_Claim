@@ -2,14 +2,6 @@ import { getDb } from "../db";
 import type { ByModelRow } from "@/types/dashboard";
 import type { RiskLevel } from "@/types/dashboard";
 
-const EIGHTEEN_MONTHS_MS = 18 * 30 * 24 * 60 * 60 * 1000;
-
-function toTimestampMs(monthsAgo: number): number {
-  const d = new Date();
-  d.setMonth(d.getMonth() - monthsAgo);
-  return d.getTime();
-}
-
 function applyRiskLevel(row: ByModelRow): ByModelRow {
   const total = row.total || 1;
   const claimRatio = row.claim_count / total;
@@ -29,8 +21,25 @@ function applyRiskLevel(row: ByModelRow): ByModelRow {
 export interface ByModelFilters {
   sku?: string;
   type?: "repair" | "claim" | "all";
-  months?: 3 | 6 | 12 | 18 | "all";
+  dateFrom?: string; // YYYY-MM-DD
+  dateTo?: string;   // YYYY-MM-DD
   risk?: "high" | "medium" | "low" | "all";
+}
+
+function applyDateConditions(
+  conditions: string[],
+  args: (string | number)[],
+  dateFrom?: string,
+  dateTo?: string
+) {
+  if (dateFrom) {
+    conditions.push("t.timestamp >= ?");
+    args.push(new Date(dateFrom).getTime());
+  }
+  if (dateTo) {
+    conditions.push("t.timestamp <= ?");
+    args.push(new Date(dateTo + "T23:59:59.999").getTime());
+  }
 }
 
 export async function getByModel(filters: ByModelFilters = {}): Promise<ByModelRow[]> {
@@ -47,11 +56,7 @@ export async function getByModel(filters: ByModelFilters = {}): Promise<ByModelR
     args.push(filters.sku);
   }
 
-  if (filters.months && filters.months !== "all") {
-    const cutoff = toTimestampMs(filters.months);
-    conditions.push("t.timestamp >= ?");
-    args.push(cutoff);
-  }
+  applyDateConditions(conditions, args, filters.dateFrom, filters.dateTo);
 
   if (filters.type && filters.type !== "all") {
     conditions.push("t.task_type = ?");
@@ -88,8 +93,8 @@ export async function getByModel(filters: ByModelFilters = {}): Promise<ByModelR
   const withExtras: ByModelRow[] = [];
   for (const row of rows) {
     const [topIssue, peakMonth] = await Promise.all([
-      getTopIssueForSku(db, row.sku, filters.months),
-      getPeakMonthForSku(db, row.sku, filters.months),
+      getTopIssueForSku(db, row.sku, filters.dateFrom, filters.dateTo),
+      getPeakMonthForSku(db, row.sku, filters.dateFrom, filters.dateTo),
     ]);
     withExtras.push(
       applyRiskLevel({
@@ -109,14 +114,12 @@ export async function getByModel(filters: ByModelFilters = {}): Promise<ByModelR
 async function getTopIssueForSku(
   db: ReturnType<typeof getDb>,
   sku: string,
-  months?: 3 | 6 | 12 | 18 | "all"
+  dateFrom?: string,
+  dateTo?: string
 ): Promise<string | null> {
   const conditions = ["t.status != 'VOIDED'", "td.sku = ?", "td.issue_group IS NOT NULL", "TRIM(td.issue_group) != ''"];
   const args: (string | number)[] = [sku];
-  if (months && months !== "all") {
-    conditions.push("t.timestamp >= ?");
-    args.push(toTimestampMs(months));
-  }
+  applyDateConditions(conditions, args, dateFrom, dateTo);
   const r = await db.execute({
     sql: `
       SELECT td.issue_group, COUNT(*) as cnt
@@ -136,14 +139,12 @@ async function getTopIssueForSku(
 async function getPeakMonthForSku(
   db: ReturnType<typeof getDb>,
   sku: string,
-  months?: 3 | 6 | 12 | 18 | "all"
+  dateFrom?: string,
+  dateTo?: string
 ): Promise<string | null> {
   const conditions = ["t.status != 'VOIDED'", "td.sku = ?", "t.timestamp IS NOT NULL"];
   const args: (string | number)[] = [sku];
-  if (months && months !== "all") {
-    conditions.push("t.timestamp >= ?");
-    args.push(toTimestampMs(months));
-  }
+  applyDateConditions(conditions, args, dateFrom, dateTo);
   const r = await db.execute({
     sql: `
       SELECT strftime('%Y-%m', datetime(t.timestamp / 1000, 'unixepoch')) as month, COUNT(*) as cnt

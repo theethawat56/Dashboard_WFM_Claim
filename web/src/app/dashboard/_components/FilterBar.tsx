@@ -23,6 +23,10 @@ export interface FilterBarProps {
   toValue?: string;
   onFromChange?: (v: string) => void;
   onToChange?: (v: string) => void;
+  warrantyFromValue?: string;
+  warrantyToValue?: string;
+  onWarrantyFromChange?: (v: string) => void;
+  onWarrantyToChange?: (v: string) => void;
   onReset?: () => void;
   showSearch?: boolean;
   showType?: boolean;
@@ -30,6 +34,7 @@ export interface FilterBarProps {
   showRisk?: boolean;
   showSku?: boolean;
   showDateRange?: boolean;
+  showWarrantyRange?: boolean;
 }
 
 export function FilterBar({
@@ -52,6 +57,10 @@ export function FilterBar({
   toValue,
   onFromChange,
   onToChange,
+  warrantyFromValue,
+  warrantyToValue,
+  onWarrantyFromChange,
+  onWarrantyToChange,
   onReset,
   showSearch = true,
   showType = true,
@@ -59,6 +68,7 @@ export function FilterBar({
   showRisk = false,
   showSku = false,
   showDateRange = false,
+  showWarrantyRange = false,
 }: FilterBarProps) {
   return (
     <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4">
@@ -170,6 +180,32 @@ export function FilterBar({
               type="date"
               value={toValue ?? ""}
               onChange={(e) => onToChange(e.target.value)}
+              className="h-9 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-[#1565C0] focus:outline-none"
+            />
+          </div>
+        </>
+      )}
+      {showWarrantyRange && onWarrantyFromChange && onWarrantyToChange && (
+        <>
+          <div className="min-w-[150px]">
+            <label className="mb-1 block text-xs font-medium text-slate-600">
+              วันเริ่มประกัน (ตั้งแต่)
+            </label>
+            <input
+              type="date"
+              value={warrantyFromValue ?? ""}
+              onChange={(e) => onWarrantyFromChange(e.target.value)}
+              className="h-9 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-[#1565C0] focus:outline-none"
+            />
+          </div>
+          <div className="min-w-[150px]">
+            <label className="mb-1 block text-xs font-medium text-slate-600">
+              วันเริ่มประกัน (ถึง)
+            </label>
+            <input
+              type="date"
+              value={warrantyToValue ?? ""}
+              onChange={(e) => onWarrantyToChange(e.target.value)}
               className="h-9 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-[#1565C0] focus:outline-none"
             />
           </div>

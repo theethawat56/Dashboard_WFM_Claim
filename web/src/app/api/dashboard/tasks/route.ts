@@ -14,6 +14,8 @@ export async function GET(request: NextRequest) {
       reclaimParam === "true" ? true : reclaimParam === "false" ? false : undefined;
     const from = searchParams.get("from") ?? undefined;
     const to = searchParams.get("to") ?? undefined;
+    const warrantyFrom = searchParams.get("warrantyFrom") ?? undefined;
+    const warrantyTo = searchParams.get("warrantyTo") ?? undefined;
     const page = Number(searchParams.get("page")) || 1;
     const limit = Number(searchParams.get("limit")) || 50;
 
@@ -24,6 +26,8 @@ export async function GET(request: NextRequest) {
       reclaim,
       from,
       to,
+      warrantyFrom,
+      warrantyTo,
       page,
       limit,
     });

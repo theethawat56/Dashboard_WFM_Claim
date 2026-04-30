@@ -1,8 +1,50 @@
 import { getDb } from "../db";
 import type { EvidenceRow } from "@/types/dashboard";
 
-export async function getEvidenceBySku(sku: string): Promise<EvidenceRow[]> {
+export async function getEvidenceBySku(
+  sku: string,
+  opts: {
+    dateFrom?: string;
+    dateTo?: string;
+    warrantyFrom?: string;
+    warrantyTo?: string;
+  } = {}
+): Promise<EvidenceRow[]> {
   const db = getDb();
+
+  const conditions: string[] = [
+    "t.status != 'VOIDED'",
+    "td.sku = ?",
+  ];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const args: any[] = [sku];
+
+  if (opts.dateFrom) {
+    const fromMs = new Date(opts.dateFrom).getTime();
+    conditions.push("t.timestamp >= ?");
+    args.push(fromMs);
+  }
+  if (opts.dateTo) {
+    // include the full dateTo day (end of day)
+    const toMs = new Date(opts.dateTo + "T23:59:59.999").getTime();
+    conditions.push("t.timestamp <= ?");
+    args.push(toMs);
+  }
+  if (opts.warrantyFrom) {
+    const fromMs = new Date(opts.warrantyFrom).getTime();
+    conditions.push(
+      "td.warranty_start_ts IS NOT NULL AND td.warranty_start_ts >= ?"
+    );
+    args.push(fromMs);
+  }
+  if (opts.warrantyTo) {
+    const toMs = new Date(opts.warrantyTo + "T23:59:59.999").getTime();
+    conditions.push(
+      "td.warranty_start_ts IS NOT NULL AND td.warranty_start_ts <= ?"
+    );
+    args.push(toMs);
+  }
+
   const r = await db.execute({
     sql: `
       SELECT
@@ -20,14 +62,18 @@ export async function getEvidenceBySku(sku: string): Promise<EvidenceRow[]> {
         td.issue_group,
         td.ref_task_numbers,
         td.claim_type,
-        td.create_date
+        td.create_date,
+        td.customer_guid,
+        td.warranty_id,
+        td.warranty_start_date,
+        td.warranty_period,
+        td.days_to_repair
       FROM tasks t
       JOIN task_details td ON t.id = td.task_id
-      WHERE t.status != 'VOIDED'
-        AND td.sku = ?
+      WHERE ${conditions.join(" AND ")}
       ORDER BY t.timestamp DESC
     `,
-    args: [sku],
+    args,
   });
   return r.rows.map((row: Record<string, unknown>) => ({
     task_number: String(row.task_number ?? ""),
@@ -45,5 +91,11 @@ export async function getEvidenceBySku(sku: string): Promise<EvidenceRow[]> {
     ref_task_numbers: row.ref_task_numbers != null ? String(row.ref_task_numbers) : null,
     claim_type: row.claim_type != null ? String(row.claim_type) : null,
     create_date: row.create_date != null ? String(row.create_date) : null,
+    customer_guid: row.customer_guid != null ? String(row.customer_guid) : null,
+    warranty_id: row.warranty_id != null ? String(row.warranty_id) : null,
+    warranty_start_date:
+      row.warranty_start_date != null ? String(row.warranty_start_date) : null,
+    warranty_period: row.warranty_period != null ? String(row.warranty_period) : null,
+    days_to_repair: row.days_to_repair != null ? Number(row.days_to_repair) : null,
   }));
 }

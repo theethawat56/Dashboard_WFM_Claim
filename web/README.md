@@ -73,9 +73,14 @@ npm run dev
 
 ### Tab 3 — รายการงาน (Task List)
 
-- ตัวกรอง: ค้นหา (เลขงาน, ลูกค้า, รุ่น, Serial, SKU), ประเภท, รุ่น/SKU, เคลมซ้ำ (ทั้งหมด/ซ้ำเท่านั้น/ครั้งแรกเท่านั้น), ช่วงวันที่
-- ตาราง: เลขงาน, ประเภท (ซ่อม/เคลม), ลูกค้า, รุ่น, SKU, Serial, อาการ (ย่อ 60 ตัวอักษร), วันที่, เคลมซ้ำ/ไม่หาย, อ้างอิง
+- ตัวกรอง: ค้นหา (เลขงาน, ลูกค้า, รุ่น, Serial, SKU, **Warranty ID**, **Customer GUID**), ประเภท, รุ่น/SKU, เคลมซ้ำ (ทั้งหมด/ซ้ำเท่านั้น/ครั้งแรกเท่านั้น), ช่วงวันที่งาน, **ช่วงวันเริ่มประกัน (Warranty Start Date)**
+- ตาราง: เลขงาน, ประเภท (ซ่อม/เคลม), ลูกค้า, รุ่น, SKU, Serial, อาการ (ย่อ 60 ตัวอักษร), วันที่งาน, **วันเริ่มประกัน**, **อายุก่อนซ่อม (วัน)**, เคลมซ้ำ/ไม่หาย, อ้างอิง
 - แบ่งหน้า 50 รายการต่อหน้า
+
+#### Warranty data sync
+
+- ทำการดึงข้อมูลประกันอัตโนมัติทุกครั้งที่ Re-Sync (ใช้ `customer_guid` + `warranty_id` ที่ sync มาจาก WFM แล้วเรียก `https://xsxx8bsz3d.execute-api.ap-southeast-1.amazonaws.com/prod/RobotMaker/customers/{gUId}/warranties/{warrantyId}` เพื่อหา `warranty_start_date` และคำนวณ `days_to_repair`)
+- Backfill ย้อนหลังเฉพาะข้อมูลประกันโดยไม่ต้อง re-sync ทั้งหมด: `POST /api/sync/warranty` (เพิ่ม `?all=1` เพื่อ refresh ใหม่ทั้งหมด, `?limit=N` เพื่อจำกัดจำนวนงานที่ดึง)
 
 ### Tab 4 — หลักฐานต่อรอง (Factory Claim Evidence)
 
@@ -88,15 +93,19 @@ npm run dev
 
 ### CSV
 
-- **URL**: `GET /api/export/csv?sku=SKU-001`
+- **URL**: `GET /api/export/csv?sku=SKU-001` (รองรับ `dateFrom`, `dateTo`, `warrantyFrom`, `warrantyTo`)
 - **ไฟล์**: `claim_evidence_{SKU}_{YYYY-MM-DD}.csv`
-- คอลัมน์: task_number, task_type, customer_name, customer_province, product_model, sku, serial_number, issue_description, issue_group, create_date, is_reclaim, ref_task_numbers, claim_type, is_unfixed
+- คอลัมน์: task_number, task_type, customer_name, customer_province, product_model, sku, serial_number, issue_description, issue_group, create_date, warranty_id, warranty_start_date, warranty_period, days_to_repair, is_reclaim, ref_task_numbers, claim_type, is_unfixed, customer_guid
+- หาก `create_date` ใน DB ว่าง จะ fallback มาใช้ `t.timestamp` (รูปแบบ `YYYY-MM-DD`) อัตโนมัติ
 
 ### Excel
 
-- **URL**: `GET /api/export/excel` หรือ `GET /api/export/excel?skus=SKU1,SKU2`
+- **URL**: `GET /api/export/excel` หรือ `GET /api/export/excel?skus=SKU1,SKU2` (รองรับ `dateFrom`, `dateTo`, `warrantyFrom`, `warrantyTo`)
 - **ไฟล์**: `factory_claim_report_{YYYY-MM-DD}.xlsx`
-- Sheet: สรุปรายรุ่น, รายการงาน, อาการเสีย, หลักฐาน, และหนึ่ง sheet ต่อ SKU ที่เลือก (`{SKU}_tasks`)
+- Sheets:
+  - **สรุปรายรุ่น** — SKU, รุ่น, จำนวนงาน, ระดับความเสี่ยง, **วันที่งานแรก / ล่าสุด**, **วันเริ่มประกัน เร็ว/ล่าสุด**, **อายุก่อนซ่อมเฉลี่ย (วัน)**
+  - **งานทั้งหมด** — flat sheet ของทุกงานที่ export พร้อมคอลัมน์ create_date, warranty_start_date, days_to_repair ฯลฯ
+  - **`{SKU}_tasks`** — หนึ่ง sheet ต่อ SKU ที่เลือก (พร้อมคอลัมน์ warranty_id, warranty_start_date, warranty_period, days_to_repair)
 
 ### PDF
 

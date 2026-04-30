@@ -99,6 +99,66 @@ function getProductId(task: Task): string | null {
   return value || null;
 }
 
+function pickFirstString(...values: Array<unknown>): string | null {
+  for (const v of values) {
+    if (typeof v === "string" && v.trim() !== "") return v.trim();
+  }
+  return null;
+}
+
+function getCustomerGUId(task: Task): string | null {
+  const taskRec = task as unknown as Record<string, unknown>;
+  const detail = task.detail as Record<string, unknown> | undefined;
+  const customerInfo =
+    (detail?.customerInfo as Record<string, unknown> | undefined) ??
+    (detail?.customer_info as Record<string, unknown> | undefined);
+  return pickFirstString(
+    taskRec.customerGUId,
+    taskRec.customer_g_uid,
+    taskRec.customer_guid,
+    taskRec.customerGuid,
+    detail?.customerGUId,
+    detail?.customer_g_uid,
+    detail?.customer_guid,
+    detail?.customerGuid,
+    customerInfo?.gUId,
+    customerInfo?.guid,
+    customerInfo?.id
+  );
+}
+
+function getWarrantyId(task: Task): string | null {
+  const taskRec = task as unknown as Record<string, unknown>;
+  const detail = task.detail as Record<string, unknown> | undefined;
+  const warrantyInfo =
+    (detail?.warrantyInfo as Record<string, unknown> | undefined) ??
+    (detail?.warranty_info as Record<string, unknown> | undefined);
+  const productInfo = getProductInfo(task) as Record<string, unknown> | null;
+  const taskInfo =
+    (detail?.taskInfo as Record<string, unknown> | undefined) ??
+    (detail?.task_info as Record<string, unknown> | undefined);
+  return pickFirstString(
+    taskRec.warrantyId,
+    taskRec.warranty_id,
+    detail?.warrantyId,
+    detail?.warranty_id,
+    warrantyInfo?.warrantyId,
+    warrantyInfo?.id,
+    productInfo?.warrantyId,
+    taskInfo?.warrantyId
+  );
+}
+
+function tsToIsoDate(ts: number | null): string | null {
+  if (ts == null || !Number.isFinite(ts)) return null;
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return null;
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export async function upsertTasks(
   tasks: Task[],
   taskType: "repair" | "claim",
@@ -147,7 +207,21 @@ export async function upsertTasks(
     const customerPhone = detail?.customer_phone ?? detail?.customerPhone ?? null;
     const customerProvince = detail?.customer_province ?? detail?.customerProvince ?? null;
     const shippingOption = detail?.shipping_option ?? detail?.shippingOption ?? null;
-    const createDate = detail?.create_date ?? detail?.createDate ?? null;
+    // Prefer explicit detail.create_date, fall back to nested taskInfo.createDate, then to the
+    // task timestamp formatted as YYYY-MM-DD so the column is never empty in exports.
+    const taskInfoForDate =
+      (detail?.taskInfo as { createDate?: string; create_date?: string } | undefined) ??
+      (detail?.task_info as { createDate?: string; create_date?: string } | undefined);
+    const createDate =
+      detail?.create_date ??
+      detail?.createDate ??
+      taskInfoForDate?.create_date ??
+      taskInfoForDate?.createDate ??
+      tsToIsoDate(timestamp) ??
+      null;
+
+    const customerGuid = getCustomerGUId(task);
+    const warrantyId = getWarrantyId(task);
 
     const productId = getProductId(task);
     const sku = productId ? skuMap.get(productId) ?? "" : "";
@@ -160,8 +234,19 @@ export async function upsertTasks(
         task_id, customer_name, customer_phone, customer_province,
         product_model, product_serial, issue_description, shipping_option,
         create_date, ref_numbers,
-        sku, issue_group, is_reclaim, ref_task_numbers, claim_type
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        sku, issue_group, is_reclaim, ref_task_numbers, claim_type,
+        customer_guid, warranty_id,
+        warranty_start_date, warranty_start_ts, warranty_period,
+        warranty_order_number, warranty_serial, days_to_repair
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        COALESCE((SELECT warranty_start_date FROM task_details WHERE task_id = ?), NULL),
+        COALESCE((SELECT warranty_start_ts FROM task_details WHERE task_id = ?), NULL),
+        COALESCE((SELECT warranty_period FROM task_details WHERE task_id = ?), NULL),
+        COALESCE((SELECT warranty_order_number FROM task_details WHERE task_id = ?), NULL),
+        COALESCE((SELECT warranty_serial FROM task_details WHERE task_id = ?), NULL),
+        COALESCE((SELECT days_to_repair FROM task_details WHERE task_id = ?), NULL)
+      )`,
       args: [
         id,
         customerName,
@@ -178,6 +263,14 @@ export async function upsertTasks(
         isReclaimFlag,
         refTaskNumbers,
         claimType,
+        customerGuid,
+        warrantyId,
+        id,
+        id,
+        id,
+        id,
+        id,
+        id,
       ],
     });
 
