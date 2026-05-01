@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runDailySync } from "@/lib/sync";
+import { ensureNewColumns } from "@/lib/migrate";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 minutes (Vercel Pro), adjust if needed
@@ -13,6 +14,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   }
 
   try {
+    await ensureNewColumns();
     console.log("[cron/sync] Starting daily sync...");
     const result = await runDailySync();
     console.log("[cron/sync] Daily sync completed:", result);

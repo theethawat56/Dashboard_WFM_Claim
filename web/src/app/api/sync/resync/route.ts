@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { runRecentSync } from "@/lib/sync";
+import { ensureNewColumns } from "@/lib/migrate";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 export async function POST(): Promise<NextResponse> {
   try {
+    await ensureNewColumns();
     console.log("[sync/resync] Starting 30-day resync...");
     const result = await runRecentSync(30);
     console.log("[sync/resync] Resync completed:", result);

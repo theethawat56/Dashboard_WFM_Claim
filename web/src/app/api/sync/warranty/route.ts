@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchWarrantyForPendingTasks } from "@/lib/sync/warranty";
+import { ensureNewColumns } from "@/lib/migrate";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -19,6 +20,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const limitParam = searchParams.get("limit");
     const limit = limitParam ? Number(limitParam) : undefined;
 
+    await ensureNewColumns();
     console.log(
       `[sync/warranty] Backfilling warranty data (onlyMissing=${!all}, limit=${
         limit ?? "all"

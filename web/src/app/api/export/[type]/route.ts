@@ -16,6 +16,7 @@ import {
 } from "@/lib/export/generatePdf";
 import { generateTxtDemandLetter, getTxtFilename } from "@/lib/export/generateTxt";
 import { renderToBuffer } from "@react-pdf/renderer";
+import { ensureNewColumns } from "@/lib/migrate";
 
 export const dynamic = "force-dynamic";
 
@@ -101,6 +102,7 @@ export async function GET(
   const warrantyTo = searchParams.get("warrantyTo") ?? undefined;
 
   try {
+    await ensureNewColumns();
     if (exportType === "csv") {
       if (!sku?.trim()) {
         return NextResponse.json(
