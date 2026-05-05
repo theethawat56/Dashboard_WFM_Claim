@@ -72,8 +72,25 @@ function getIssueDescription(task: Task): string | null {
   return (info?.description as string | undefined) ?? null;
 }
 
-function getIssueGroup(task: Task): string {
+/**
+ * Pull the value used to populate the `issue_group` column.
+ *
+ * Behaviour by task type:
+ *   - "repair" (MNT, workflow ulMEhA): the source API never returns
+ *     `productInfo.issueGroup` on these tasks, so fall back to
+ *     `productInfo.description` (the actual issue text the customer
+ *     reported, e.g. "ยางบนล้อเสียหาย"). This is what powers the
+ *     "อาการเสียที่พบบ่อย" chart for repair work.
+ *   - "claim" (CLM, workflow OC8LiE): keep the historical behaviour and
+ *     read `productInfo.issueGroup` (it's filled most of the time on
+ *     claim tasks).
+ */
+function getIssueGroup(task: Task, taskType: "repair" | "claim"): string {
   const info = getProductInfo(task);
+  if (taskType === "repair") {
+    const desc = info?.description as string | undefined;
+    return typeof desc === "string" ? desc.trim() : "";
+  }
   return (info?.issueGroup as string | undefined) ?? "";
 }
 
@@ -225,7 +242,7 @@ export async function upsertTasks(
 
     const productId = getProductId(task);
     const sku = productId ? skuMap.get(productId) ?? "" : "";
-    const issueGroup = getIssueGroup(task);
+    const issueGroup = getIssueGroup(task, taskType);
     const refTaskNumbers = getRefTaskNumbers(task);
     const claimType = getClaimType(task, taskType);
 
