@@ -47,6 +47,67 @@ const ALLOWED_TABLES = new Set<ColumnSpec["table"]>([
   "sync_log",
 ]);
 
+const NEW_TABLES: string[] = [
+  `CREATE TABLE IF NOT EXISTS purchase_orders (
+    id INTEGER PRIMARY KEY,
+    po_number TEXT,
+    po_date TEXT,
+    po_date_ts INTEGER,
+    status TEXT,
+    payment_status TEXT,
+    supplier_name TEXT,
+    supplier_code TEXT,
+    reference TEXT,
+    total_amount REAL,
+    total_quantity REAL,
+    payment_amount REAL,
+    currency TEXT,
+    created_by TEXT,
+    payment_term TEXT,
+    is_foc INTEGER DEFAULT 0,
+    is_foreign INTEGER DEFAULT 0,
+    created_at_src TEXT,
+    updated_at_src TEXT,
+    synced_at TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS purchase_order_lines (
+    id INTEGER PRIMARY KEY,
+    po_id INTEGER NOT NULL,
+    sku TEXT,
+    product_name TEXT,
+    quantity REAL,
+    unit_cost REAL,
+    total_price REAL,
+    FOREIGN KEY (po_id) REFERENCES purchase_orders(id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_po_lines_sku ON purchase_order_lines(sku)`,
+  `CREATE INDEX IF NOT EXISTS idx_po_lines_po_id ON purchase_order_lines(po_id)`,
+  `CREATE TABLE IF NOT EXISTS po_case_matches (
+    task_id TEXT PRIMARY KEY,
+    task_number TEXT,
+    task_type TEXT,
+    sku TEXT,
+    supplier_name TEXT,
+    ref_date TEXT,
+    ref_date_source TEXT,
+    match_tier TEXT,
+    po_id INTEGER,
+    po_number_out TEXT,
+    po_date TEXT,
+    po_status TEXT,
+    po_payment_status TEXT,
+    unit_cost REAL,
+    po_sku_qty REAL,
+    match_note TEXT,
+    claims_on_this_po_sku INTEGER,
+    claim_rate_pct REAL,
+    updated_at TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_po_matches_sku ON po_case_matches(sku)`,
+  `CREATE INDEX IF NOT EXISTS idx_po_matches_tier ON po_case_matches(match_tier)`,
+  `CREATE INDEX IF NOT EXISTS idx_po_matches_po ON po_case_matches(po_id)`,
+];
+
 export interface MigrateReport {
   added: string[];
   skipped: string[];
@@ -76,6 +137,16 @@ async function getExistingColumns(
 async function runEnsure(): Promise<MigrateReport> {
   const db = getDb();
   const report: MigrateReport = { added: [], skipped: [], failed: [] };
+
+  for (const sql of NEW_TABLES) {
+    try {
+      await db.execute(sql);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      report.failed.push({ column: "purchase_orders*", error: msg });
+      console.warn(`[migrate] CREATE TABLE/INDEX failed: ${msg}`);
+    }
+  }
 
   const tables = Array.from(new Set(NEW_COLUMNS.map((c) => c.table)));
   const existingByTable = new Map<ColumnSpec["table"], Set<string>>();

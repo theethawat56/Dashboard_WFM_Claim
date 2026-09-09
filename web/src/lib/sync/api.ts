@@ -66,6 +66,7 @@ export async function fetchAllPages(
         "company = RobotMaker",
         `workflowId IN ["${workflowId}"]`,
         "type = TASK",
+        "status != VOIDED",
       ],
       sort: ["timestamp:desc"],
     };

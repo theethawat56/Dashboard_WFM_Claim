@@ -144,3 +144,73 @@ export interface SkuTaskForBatch {
 }
 
 export type RiskLevel = "high" | "medium" | "low";
+
+export type PoMatchTier = "green" | "orange" | "yellow" | "gray";
+
+export interface FactoryClaimKpis {
+  po_count: number;
+  line_count: number;
+  case_total: number;
+  matched: number;
+  green: number;
+  orange: number;
+  yellow: number;
+  gray: number;
+  damage_total: number;
+  last_synced_at: string | null;
+}
+
+export interface FactoryPoSkuRow {
+  po_id: number;
+  po_number_out: string;
+  po_number: string;
+  reference: string;
+  po_date: string | null;
+  status: string | null;
+  payment_status: string | null;
+  supplier_name: string;
+  sku: string;
+  quantity: number;
+  unit_cost: number;
+  matched_cases: number;
+  claim_rate_pct: number | null;
+  damage_amount: number;
+}
+
+export interface FactoryMatchRow {
+  task_id: string;
+  task_number: string;
+  task_type: string;
+  sku: string;
+  supplier_name: string;
+  ref_date: string | null;
+  ref_date_source: string;
+  match_tier: PoMatchTier;
+  po_id: number | null;
+  po_number_out: string | null;
+  po_date: string | null;
+  po_status: string | null;
+  po_payment_status: string | null;
+  unit_cost: number | null;
+  po_sku_qty: number | null;
+  match_note: string;
+  claims_on_this_po_sku: number | null;
+  claim_rate_pct: number | null;
+}
+
+export interface FactoryPoHeaderRow {
+  id: number;
+  po_number: string;
+  po_date: string | null;
+  status: string | null;
+  payment_status: string | null;
+  supplier_name: string;
+  supplier_code: string | null;
+  reference: string | null;
+  total_amount: number;
+  total_quantity: number;
+  payment_amount: number;
+  currency: string | null;
+  created_by: string | null;
+  payment_term: string | null;
+}

@@ -49,11 +49,70 @@ const TABLE_AUTO_SYNC_STATE = `CREATE TABLE IF NOT EXISTS auto_sync_state (
   updated_at TEXT DEFAULT (datetime('now'))
 )`;
 
+const TABLE_PURCHASE_ORDERS = `CREATE TABLE IF NOT EXISTS purchase_orders (
+  id INTEGER PRIMARY KEY,
+  po_number TEXT,
+  po_date TEXT,
+  po_date_ts INTEGER,
+  status TEXT,
+  payment_status TEXT,
+  supplier_name TEXT,
+  supplier_code TEXT,
+  reference TEXT,
+  total_amount REAL,
+  total_quantity REAL,
+  payment_amount REAL,
+  currency TEXT,
+  created_by TEXT,
+  payment_term TEXT,
+  is_foc INTEGER DEFAULT 0,
+  is_foreign INTEGER DEFAULT 0,
+  created_at_src TEXT,
+  updated_at_src TEXT,
+  synced_at TEXT
+)`;
+
+const TABLE_PURCHASE_ORDER_LINES = `CREATE TABLE IF NOT EXISTS purchase_order_lines (
+  id INTEGER PRIMARY KEY,
+  po_id INTEGER NOT NULL,
+  sku TEXT,
+  product_name TEXT,
+  quantity REAL,
+  unit_cost REAL,
+  total_price REAL,
+  FOREIGN KEY (po_id) REFERENCES purchase_orders(id)
+)`;
+
+const TABLE_PO_CASE_MATCHES = `CREATE TABLE IF NOT EXISTS po_case_matches (
+  task_id TEXT PRIMARY KEY,
+  task_number TEXT,
+  task_type TEXT,
+  sku TEXT,
+  supplier_name TEXT,
+  ref_date TEXT,
+  ref_date_source TEXT,
+  match_tier TEXT,
+  po_id INTEGER,
+  po_number_out TEXT,
+  po_date TEXT,
+  po_status TEXT,
+  po_payment_status TEXT,
+  unit_cost REAL,
+  po_sku_qty REAL,
+  match_note TEXT,
+  claims_on_this_po_sku INTEGER,
+  claim_rate_pct REAL,
+  updated_at TEXT
+)`;
+
 const STATEMENTS: Array<{ name: string; sql: string }> = [
   { name: "tasks", sql: TABLE_TASKS },
   { name: "task_details", sql: TABLE_TASK_DETAILS },
   { name: "sync_log", sql: TABLE_SYNC_LOG },
   { name: "auto_sync_state", sql: TABLE_AUTO_SYNC_STATE },
+  { name: "purchase_orders", sql: TABLE_PURCHASE_ORDERS },
+  { name: "purchase_order_lines", sql: TABLE_PURCHASE_ORDER_LINES },
+  { name: "po_case_matches", sql: TABLE_PO_CASE_MATCHES },
 ];
 
 // Expected new columns: table -> column -> full ALTER SQL (no IF NOT EXISTS for compatibility)
