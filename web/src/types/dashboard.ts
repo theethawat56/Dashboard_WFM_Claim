@@ -217,3 +217,48 @@ export interface FactoryPoHeaderRow {
   created_by: string | null;
   payment_term: string | null;
 }
+
+export type WarrantyBucket = "in" | "out" | "unknown";
+
+export interface ClaimTrackingKpis {
+  month: string;
+  total: number;
+  in_warranty: number;
+  out_warranty: number;
+  unknown_warranty: number;
+  closed: number;
+  factory_recorded: number;
+  month_value: number;
+  recorded_value: number;
+  missing_serial: number;
+  missing_symptom: number;
+}
+
+export interface ClaimTrackingRow {
+  id: string;
+  task_number: string;
+  status: string | null;
+  is_closed: boolean;
+  sku: string | null;
+  product_name: string | null;
+  product_serial: string | null;
+  issue_description: string | null;
+  issue_group: string | null;
+  create_date: string | null;
+  timestamp: number | null;
+  warranty_start_date: string | null;
+  days_from_register: number | null;
+  warranty_bucket: WarrantyBucket;
+  missing_serial: boolean;
+  missing_symptom: boolean;
+  factory_recorded: boolean;
+  recorded_amount: number | null;
+  unit_cost: number | null;
+  match_tier: PoMatchTier | null;
+}
+
+export interface ClaimTrackingData {
+  kpis: ClaimTrackingKpis;
+  rows: ClaimTrackingRow[];
+  months: string[];
+}

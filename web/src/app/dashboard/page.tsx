@@ -15,6 +15,7 @@ import { DailyTopSkusCard } from "./_components/DailyTopSkusCard";
 import { ClaimCompensationDialog } from "./_components/ClaimCompensationDialog";
 import { ClaimCompTab } from "./_components/ClaimCompTab";
 import { FactoryClaimTab } from "./_components/FactoryClaimTab";
+import { ClaimTrackingTab } from "./_components/ClaimTrackingTab";
 import { ClaimSummaryCard } from "./_components/ClaimSummaryCard";
 import type { DailyTrendRow, DailyTopSkuRow, ClaimCompOverall } from "@/types/dashboard";
 import { FilterBar } from "./_components/FilterBar";
@@ -54,7 +55,7 @@ const RECLAIM_OPTIONS = [
 export default function DashboardPage() {
   const [apiError, setApiError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<
-    "overview" | "bymodel" | "tasks" | "evidence" | "claims" | "factory"
+    "overview" | "bymodel" | "tasks" | "evidence" | "claims" | "factory" | "tracking"
   >("overview");
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [trend, setTrend] = useState<{ month: string; repair_count: number; claim_count: number; reclaim_count: number; total: number }[]>([]);
@@ -548,6 +549,7 @@ export default function DashboardPage() {
             <TabsTrigger value="bymodel">แยกตามรุ่น</TabsTrigger>
             <TabsTrigger value="tasks">รายการงาน</TabsTrigger>
             <TabsTrigger value="claims">ผลเคลม</TabsTrigger>
+            <TabsTrigger value="tracking">ตามเคลม</TabsTrigger>
             <TabsTrigger value="factory">เคลมโรงงาน</TabsTrigger>
             <TabsTrigger value="evidence">หลักฐานต่อรอง</TabsTrigger>
           </TabsList>
@@ -946,6 +948,10 @@ export default function DashboardPage() {
 
           <TabsContent value="claims" className="space-y-6">
             <ClaimCompTab />
+          </TabsContent>
+
+          <TabsContent value="tracking" className="space-y-6">
+            <ClaimTrackingTab />
           </TabsContent>
 
           <TabsContent value="factory" className="space-y-6">
