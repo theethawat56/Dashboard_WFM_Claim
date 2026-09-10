@@ -1,4 +1,5 @@
 import { getDb } from "../db";
+import { SQL_NOT_VOIDED } from "../taskStatus";
 import type { MonthlyTrendRow, DailyTrendRow, DailyTopSkuRow } from "@/types/dashboard";
 
 const EIGHTEEN_MONTHS_MS = 18 * 30 * 24 * 60 * 60 * 1000;
@@ -15,7 +16,7 @@ export async function getMonthlyTrend(): Promise<MonthlyTrendRow[]> {
         SUM(CASE WHEN t.is_reclaim = 1       THEN 1 ELSE 0 END) as reclaim_count,
         COUNT(*) as total
       FROM tasks t
-      WHERE t.status != 'VOIDED'
+      WHERE ${SQL_NOT_VOIDED}
         AND t.timestamp >= ?
       GROUP BY month
       ORDER BY month ASC
@@ -43,7 +44,7 @@ export async function getDailyTrend(days: number = 30): Promise<DailyTrendRow[]>
         SUM(CASE WHEN t.is_reclaim = 1       THEN 1 ELSE 0 END) as reclaim_count,
         COUNT(*) as total
       FROM tasks t
-      WHERE t.status != 'VOIDED'
+      WHERE ${SQL_NOT_VOIDED}
         AND t.timestamp >= ?
       GROUP BY date
       ORDER BY date ASC
@@ -81,7 +82,7 @@ export async function getDailyTopSkus(date?: string, limit: number = 5): Promise
         COUNT(*) as total
       FROM tasks t
       JOIN task_details td ON t.id = td.task_id
-      WHERE t.status != 'VOIDED'
+      WHERE ${SQL_NOT_VOIDED}
         AND t.timestamp >= ?
         AND t.timestamp <= ?
         AND td.sku IS NOT NULL

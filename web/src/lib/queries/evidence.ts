@@ -1,4 +1,5 @@
 import { getDb } from "../db";
+import { SQL_NOT_VOIDED } from "../taskStatus";
 import type { EvidenceRow } from "@/types/dashboard";
 
 export async function getEvidenceBySku(
@@ -13,7 +14,7 @@ export async function getEvidenceBySku(
   const db = getDb();
 
   const conditions: string[] = [
-    "t.status != 'VOIDED'",
+    SQL_NOT_VOIDED,
     "td.sku = ?",
   ];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

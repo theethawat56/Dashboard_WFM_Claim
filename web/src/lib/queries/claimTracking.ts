@@ -1,5 +1,6 @@
 import { getDb } from "../db";
 import { ensureNewColumns } from "../migrate";
+import { isTaskClosed, SQL_NOT_VOIDED } from "../taskStatus";
 import type {
   ClaimTrackingData,
   ClaimTrackingKpis,
@@ -7,9 +8,6 @@ import type {
   PoMatchTier,
   WarrantyBucket,
 } from "@/types/dashboard";
-
-/** WFM claim workflow OC8LiE — closed / returned. */
-export const CLAIM_CLOSED_STATUS = "HRXLwh";
 
 const WARRANTY_DAYS = 365;
 
@@ -76,6 +74,7 @@ export async function getClaimTracking(monthRaw?: string | null): Promise<ClaimT
       SELECT
         t.id,
         t.task_number,
+        t.task_type,
         t.status,
         t.timestamp,
         td.sku,
@@ -99,8 +98,7 @@ export async function getClaimTracking(monthRaw?: string | null): Promise<ClaimT
         GROUP BY bt.task_id
       ) bt ON bt.task_id = t.id
       LEFT JOIN po_case_matches m ON m.task_id = t.id
-      WHERE t.task_type = 'claim'
-        AND t.status != 'VOIDED'
+      WHERE ${SQL_NOT_VOIDED}
         AND ${monthExpr} = ?
       ORDER BY t.timestamp DESC, t.task_number DESC
     `,
@@ -114,13 +112,15 @@ export async function getClaimTracking(monthRaw?: string | null): Promise<ClaimT
     const days = row.days_from_register != null ? Number(row.days_from_register) : null;
     const sku = row.sku != null ? String(row.sku).trim() : "";
     const model = row.product_model != null ? String(row.product_model).trim() : "";
+    const taskType = row.task_type === "repair" ? "repair" : "claim";
     const status = row.status != null ? String(row.status) : null;
     const matchTier = row.match_tier != null ? (String(row.match_tier) as PoMatchTier) : null;
     return {
       id: String(row.id ?? ""),
       task_number: String(row.task_number ?? ""),
+      task_type: taskType,
       status,
-      is_closed: status === CLAIM_CLOSED_STATUS,
+      is_closed: isTaskClosed(taskType, status),
       sku: sku || null,
       product_name: model || sku || null,
       product_serial: serial,
@@ -148,8 +148,7 @@ export async function getClaimTracking(monthRaw?: string | null): Promise<ClaimT
         SELECT DISTINCT bt.batch_id
         FROM claim_comp_batch_tasks bt
         JOIN tasks t ON t.id = bt.task_id
-        WHERE t.task_type = 'claim'
-          AND t.status != 'VOIDED'
+        WHERE ${SQL_NOT_VOIDED}
           AND ${monthExpr} = ?
       )
     `,
@@ -178,7 +177,7 @@ export async function getClaimTracking(monthRaw?: string | null): Promise<ClaimT
   const monthsRes = await db.execute(`
     SELECT DISTINCT ${monthExpr} as m
     FROM tasks t
-    WHERE t.task_type = 'claim' AND t.status != 'VOIDED' AND t.timestamp IS NOT NULL
+    WHERE ${SQL_NOT_VOIDED} AND t.timestamp IS NOT NULL
     ORDER BY m DESC
   `);
   const months = (monthsRes.rows as { m?: string }[])

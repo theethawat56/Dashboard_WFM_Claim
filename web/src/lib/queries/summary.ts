@@ -1,4 +1,5 @@
 import { getDb } from "../db";
+import { SQL_NOT_VOIDED } from "../taskStatus";
 import type { SummaryStats } from "@/types/dashboard";
 
 export async function getSummary(): Promise<SummaryStats> {
@@ -13,7 +14,7 @@ export async function getSummary(): Promise<SummaryStats> {
       COUNT(DISTINCT CASE WHEN td.sku IS NOT NULL AND TRIM(td.sku) != '' THEN td.sku END) as unique_sku_count
     FROM tasks t
     LEFT JOIN task_details td ON t.id = td.task_id
-    WHERE t.status != 'VOIDED'
+    WHERE ${SQL_NOT_VOIDED}
   `);
   const row = r.rows[0] as Record<string, number | null>;
   return {

@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ClaimCompensationDialog } from "./ClaimCompensationDialog";
-import type { ClaimTrackingData, ClaimTrackingRow, WarrantyBucket } from "@/types/dashboard";
+import type { ClaimTrackingData, ClaimTrackingKpis, ClaimTrackingRow, WarrantyBucket } from "@/types/dashboard";
 
 type ViewFilter = "all" | WarrantyBucket | "missing_serial" | "missing_symptom" | "closed" | "open";
+type TypeFilter = "all" | "repair" | "claim";
 
 function bangkokMonth(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }).slice(0, 7);
@@ -32,6 +33,7 @@ export function ClaimTrackingTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<ViewFilter>("all");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [search, setSearch] = useState("");
   const [dialog, setDialog] = useState<{ sku: string; model: string; task: string } | null>(null);
 
@@ -40,7 +42,7 @@ export function ClaimTrackingTab() {
     setError(null);
     try {
       const res = await fetch(`/api/dashboard/claim-tracking?month=${encodeURIComponent(month)}`);
-      if (!res.ok) throw new Error("โหลดงานเคลมไม่สำเร็จ");
+      if (!res.ok) throw new Error("โหลดงานไม่สำเร็จ");
       setData((await res.json()) as ClaimTrackingData);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -53,10 +55,36 @@ export function ClaimTrackingTab() {
     load().catch(() => undefined);
   }, [load]);
 
-  const rows = useMemo(() => {
+  const typedRows = useMemo(() => {
     const list = data?.rows ?? [];
+    if (typeFilter === "all") return list;
+    return list.filter((r) => r.task_type === typeFilter);
+  }, [data, typeFilter]);
+
+  const kpis = useMemo((): ClaimTrackingKpis | null => {
+    if (!data) return null;
+    const list = typedRows;
+    return {
+      month: data.kpis.month,
+      total: list.length,
+      in_warranty: list.filter((r) => r.warranty_bucket === "in").length,
+      out_warranty: list.filter((r) => r.warranty_bucket === "out").length,
+      unknown_warranty: list.filter((r) => r.warranty_bucket === "unknown").length,
+      closed: list.filter((r) => r.is_closed).length,
+      factory_recorded: list.filter((r) => r.factory_recorded).length,
+      month_value: list.reduce((sum, r) => {
+        if (r.match_tier && r.match_tier !== "gray" && r.unit_cost != null) return sum + r.unit_cost;
+        return sum;
+      }, 0),
+      recorded_value: list.reduce((sum, r) => sum + (r.recorded_amount ?? 0), 0),
+      missing_serial: list.filter((r) => r.missing_serial).length,
+      missing_symptom: list.filter((r) => r.missing_symptom).length,
+    };
+  }, [data, typedRows]);
+
+  const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return list.filter((r) => {
+    return typedRows.filter((r) => {
       if (view === "in" && r.warranty_bucket !== "in") return false;
       if (view === "out" && r.warranty_bucket !== "out") return false;
       if (view === "unknown" && r.warranty_bucket !== "unknown") return false;
@@ -72,10 +100,11 @@ export function ClaimTrackingTab() {
         (r.product_serial ?? "").toLowerCase().includes(needle)
       );
     });
-  }, [data, view, search]);
+  }, [typedRows, view, search]);
 
-  const kpis = data?.kpis;
   const months = data?.months ?? [month];
+  const repairCount = (data?.rows ?? []).filter((r) => r.task_type === "repair").length;
+  const claimCount = (data?.rows ?? []).filter((r) => r.task_type === "claim").length;
 
   return (
     <div className="space-y-6">
@@ -83,7 +112,7 @@ export function ClaimTrackingTab() {
         <div>
           <h2 className="text-lg font-semibold text-slate-900">ตามเคลมรายเดือน</h2>
           <p className="text-sm text-slate-500">
-            ดูเฉพาะงานเคลมเดือนที่เลือก · ในประกัน = ไม่เกิน 365 วันจากวันลงทะเบียน (รวมวันที่ติดลบ)
+            ดูงานซ่อมและเคลมเฉพาะเดือนที่เลือก · ตัดงานยกเลิก (VOIDED) ออก · ในประกัน = ไม่เกิน 365 วันจากวันลงทะเบียน (รวมวันติดลบ)
           </p>
         </div>
         <label className="text-sm text-slate-600">
@@ -111,7 +140,7 @@ export function ClaimTrackingTab() {
       )}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <Kpi title="งานเคลมเดือนนี้" value={kpis ? num(kpis.total) : "—"} hint={monthLabel(month)} />
+        <Kpi title="งานเดือนนี้" value={kpis ? num(kpis.total) : "—"} hint={monthLabel(month)} />
         <Kpi title="อยู่ในประกัน" value={kpis ? num(kpis.in_warranty) : "—"} hint="≤ 365 วัน / รวมวันติดลบ" />
         <Kpi title="นอกประกัน" value={kpis ? num(kpis.out_warranty) : "—"} hint={kpis ? `ไม่มีวันประกัน ${num(kpis.unknown_warranty)}` : ""} />
         <Kpi title="ปิดงานแล้ว" value={kpis ? num(kpis.closed) : "—"} hint={kpis ? `ยังเปิด ${num(kpis.total - kpis.closed)}` : ""} />
@@ -121,6 +150,30 @@ export function ClaimTrackingTab() {
           value={kpis ? money(kpis.month_value) : "—"}
           hint={kpis ? `ต้นทุน PO · บันทึกแล้ว ${money(kpis.recorded_value)}` : "บาท"}
         />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {(
+          [
+            ["all", `ทั้งหมด (${repairCount + claimCount})`],
+            ["repair", `ซ่อม (${repairCount})`],
+            ["claim", `เคลม (${claimCount})`],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => {
+              setTypeFilter(id);
+              setView("all");
+            }}
+            className={`rounded-md px-3 py-1.5 text-sm ${
+              typeFilter === id ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -159,7 +212,7 @@ export function ClaimTrackingTab() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">
-            รายการเคลม {monthLabel(month)} · {num(rows.length)} งาน
+            รายการ {monthLabel(month)} · {num(rows.length)} งาน
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -168,6 +221,7 @@ export function ClaimTrackingTab() {
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
                   <th className="px-3 py-2 font-medium">เลขงาน</th>
+                  <th className="px-3 py-2 font-medium">ประเภท</th>
                   <th className="px-3 py-2 font-medium">สินค้า</th>
                   <th className="px-3 py-2 font-medium">S/N</th>
                   <th className="px-3 py-2 font-medium">อาการเสีย</th>
@@ -183,13 +237,13 @@ export function ClaimTrackingTab() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={11} className="px-3 py-8 text-center text-slate-400">
+                      <td colSpan={12} className="px-3 py-8 text-center text-slate-400">
                       กำลังโหลด...
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-3 py-8 text-center text-slate-400">
+                      <td colSpan={12} className="px-3 py-8 text-center text-slate-400">
                       ไม่มีงานเคลมในมุมมองนี้
                     </td>
                   </tr>
@@ -235,6 +289,17 @@ function ClaimRow({ row, onRecord }: { row: ClaimTrackingRow; onRecord: () => vo
   return (
     <tr className="border-b border-slate-100">
       <td className="px-3 py-2 font-mono text-xs">{row.task_number}</td>
+      <td className="px-3 py-2">
+        <span
+          className={`inline-flex rounded-md border px-2 py-0.5 text-xs ${
+            row.task_type === "claim"
+              ? "border-violet-200 bg-violet-50 text-violet-800"
+              : "border-sky-200 bg-sky-50 text-sky-800"
+          }`}
+        >
+          {row.task_type === "claim" ? "เคลม" : "ซ่อม"}
+        </span>
+      </td>
       <td className="max-w-[200px] px-3 py-2 text-xs" title={row.sku ?? undefined}>
         {row.product_name || "—"}
       </td>

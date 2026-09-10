@@ -1,4 +1,5 @@
 import { getDb } from "../db";
+import { SQL_NOT_VOIDED } from "../taskStatus";
 import type {
   ClaimCompBatch,
   ClaimCompSkuRow,
@@ -161,7 +162,7 @@ export async function getCompSkuSummary(): Promise<ClaimCompSkuRow[]> {
         sql: `
           SELECT COUNT(*) as cnt FROM tasks t
           JOIN task_details td ON t.id = td.task_id
-          WHERE t.status != 'VOIDED' AND td.sku = ?
+          WHERE ${SQL_NOT_VOIDED} AND td.sku = ?
         `,
         args: [sku],
       }),
@@ -212,7 +213,7 @@ export async function getCompOverall(): Promise<ClaimCompOverall> {
       args: [],
     }),
     db.execute({
-      sql: `SELECT COUNT(*) as cnt FROM tasks WHERE status != 'VOIDED'`,
+      sql: `SELECT COUNT(*) as cnt FROM tasks t WHERE ${SQL_NOT_VOIDED}`,
       args: [],
     }),
     db.execute({
@@ -265,7 +266,7 @@ export async function getTasksForSku(sku: string): Promise<SkuTaskForBatch[]> {
       SELECT t.id as task_id, t.task_number, t.task_type, t.timestamp, t.is_reclaim
       FROM tasks t
       JOIN task_details td ON t.id = td.task_id
-      WHERE t.status != 'VOIDED' AND td.sku = ?
+      WHERE ${SQL_NOT_VOIDED} AND td.sku = ?
       ORDER BY t.timestamp DESC
     `,
     args: [sku],

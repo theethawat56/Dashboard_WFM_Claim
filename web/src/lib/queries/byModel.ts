@@ -1,4 +1,5 @@
 import { getDb } from "../db";
+import { SQL_NOT_VOIDED } from "../taskStatus";
 import type { ByModelRow } from "@/types/dashboard";
 import type { RiskLevel } from "@/types/dashboard";
 
@@ -45,7 +46,7 @@ function applyDateConditions(
 export async function getByModel(filters: ByModelFilters = {}): Promise<ByModelRow[]> {
   const db = getDb();
   const conditions: string[] = [
-    "t.status != 'VOIDED'",
+    SQL_NOT_VOIDED,
     "td.sku IS NOT NULL",
     "TRIM(td.sku) != ''",
   ];
@@ -117,7 +118,7 @@ async function getTopIssueForSku(
   dateFrom?: string,
   dateTo?: string
 ): Promise<string | null> {
-  const conditions = ["t.status != 'VOIDED'", "td.sku = ?", "td.issue_group IS NOT NULL", "TRIM(td.issue_group) != ''"];
+  const conditions = [SQL_NOT_VOIDED, "td.sku = ?", "td.issue_group IS NOT NULL", "TRIM(td.issue_group) != ''"];
   const args: (string | number)[] = [sku];
   applyDateConditions(conditions, args, dateFrom, dateTo);
   const r = await db.execute({
@@ -142,7 +143,7 @@ async function getPeakMonthForSku(
   dateFrom?: string,
   dateTo?: string
 ): Promise<string | null> {
-  const conditions = ["t.status != 'VOIDED'", "td.sku = ?", "t.timestamp IS NOT NULL"];
+  const conditions = [SQL_NOT_VOIDED, "td.sku = ?", "t.timestamp IS NOT NULL"];
   const args: (string | number)[] = [sku];
   applyDateConditions(conditions, args, dateFrom, dateTo);
   const r = await db.execute({

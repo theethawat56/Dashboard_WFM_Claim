@@ -55,13 +55,26 @@ async function postWithRetry(
  * Fetch all pages for one workflow. If timestampCutoff is set (daily sync),
  * stop paginating when the last item on a page has timestamp < cutoff.
  */
+function taskCutoffTs(task: Task, useUpdated: boolean): number | null {
+  if (useUpdated) {
+    const updated = task.updatedTimestamp ?? task.updated_timestamp;
+    if (updated != null) return Number(updated);
+  }
+  const ts = task.timestamp ?? task.updatedTimestamp ?? task.updated_timestamp;
+  return ts != null ? Number(ts) : null;
+}
+
 export async function fetchAllPages(
   workflowId: string,
-  timestampCutoff?: number
+  timestampCutoff?: number,
+  opts?: { statusFilter?: string; sort?: string; cutoffOnUpdated?: boolean }
 ): Promise<Task[]> {
   const all: Task[] = [];
   let page = 1;
   let nbPages: number | undefined;
+  const statusFilter = opts?.statusFilter ?? "status != VOIDED";
+  const sort = opts?.sort ?? "timestamp:desc";
+  const useUpdated = opts?.cutoffOnUpdated === true;
 
   do {
     const body = {
@@ -71,9 +84,9 @@ export async function fetchAllPages(
         "company = RobotMaker",
         `workflowId IN ["${workflowId}"]`,
         "type = TASK",
-        "status != VOIDED",
+        statusFilter,
       ],
-      sort: ["timestamp:desc"],
+      sort: [sort],
     };
 
     const data = await postWithRetry(body);
@@ -97,10 +110,10 @@ export async function fetchAllPages(
     );
 
     for (const hit of hits) {
-      const ts = hit.timestamp ?? hit.updatedTimestamp ?? hit.updated_timestamp;
+      const ts = taskCutoffTs(hit, useUpdated);
       if (timestampCutoff != null && ts != null && ts < timestampCutoff) {
         return all.filter((t) => {
-          const tts = t.timestamp ?? t.updatedTimestamp ?? t.updated_timestamp;
+          const tts = taskCutoffTs(t, useUpdated);
           return tts != null && tts >= timestampCutoff;
         });
       }
@@ -108,12 +121,10 @@ export async function fetchAllPages(
     }
 
     if (timestampCutoff != null && hits.length > 0) {
-      const last = hits[hits.length - 1];
-      const lastTs =
-        last.timestamp ?? last.updatedTimestamp ?? last.updated_timestamp;
+      const lastTs = taskCutoffTs(hits[hits.length - 1], useUpdated);
       if (lastTs != null && lastTs < timestampCutoff) {
         return all.filter((t) => {
-          const tts = t.timestamp ?? t.updatedTimestamp ?? t.updated_timestamp;
+          const tts = taskCutoffTs(t, useUpdated);
           return tts != null && tts >= timestampCutoff;
         });
       }
@@ -125,24 +136,42 @@ export async function fetchAllPages(
 
   if (timestampCutoff != null) {
     return all.filter((t) => {
-      const ts = t.timestamp ?? t.updatedTimestamp ?? t.updated_timestamp;
+      const ts = taskCutoffTs(t, useUpdated);
       return ts != null && ts >= timestampCutoff;
     });
   }
   return all;
 }
 
-/**
- * Fetch repair and claim workflows in parallel.
- */
+function mergeTasks(primary: Task[], extra: Task[]): Task[] {
+  const map = new Map<string, Task>();
+  for (const t of primary) {
+    if (t.id) map.set(t.id, t);
+  }
+  for (const t of extra) {
+    if (t.id) map.set(t.id, t);
+  }
+  return [...map.values()];
+}
+
 export async function fetchBothWorkflows(
   timestampCutoff?: number
 ): Promise<{ repair: Task[]; claim: Task[] }> {
-  const [repair, claim] = await Promise.all([
+  const voidedOpts = {
+    statusFilter: "status = VOIDED",
+    sort: "updatedTimestamp:desc",
+    cutoffOnUpdated: true,
+  };
+  const [repair, claim, repairVoided, claimVoided] = await Promise.all([
     fetchAllPages(WORKFLOWS.repair.id, timestampCutoff),
     fetchAllPages(WORKFLOWS.claim.id, timestampCutoff),
+    fetchAllPages(WORKFLOWS.repair.id, timestampCutoff, voidedOpts),
+    fetchAllPages(WORKFLOWS.claim.id, timestampCutoff, voidedOpts),
   ]);
-  return { repair, claim };
+  return {
+    repair: mergeTasks(repair, repairVoided),
+    claim: mergeTasks(claim, claimVoided),
+  };
 }
 
 /**

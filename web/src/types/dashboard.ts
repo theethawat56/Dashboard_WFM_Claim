@@ -237,6 +237,7 @@ export interface ClaimTrackingKpis {
 export interface ClaimTrackingRow {
   id: string;
   task_number: string;
+  task_type: "repair" | "claim";
   status: string | null;
   is_closed: boolean;
   sku: string | null;

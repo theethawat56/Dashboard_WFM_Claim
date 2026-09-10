@@ -1,4 +1,5 @@
 import { getDb } from "../db";
+import { SQL_NOT_VOIDED } from "../taskStatus";
 
 export interface UnclaimedClaimsSummary {
   total: number;
@@ -44,7 +45,7 @@ export async function getUnclaimedClaimsSummary(
       COUNT(DISTINCT td.sku) as unique_sku_count
     FROM tasks t
     JOIN task_details td ON t.id = td.task_id
-    WHERE t.status != 'VOIDED'
+    WHERE ${SQL_NOT_VOIDED}
       AND t.task_type = 'claim'
       AND t.timestamp >= ?
       ${whereExtraSql}
@@ -63,7 +64,7 @@ export async function getUnclaimedClaimsSummary(
       COUNT(*) as freq
     FROM tasks t
     JOIN task_details td ON t.id = td.task_id
-    WHERE t.status != 'VOIDED'
+    WHERE ${SQL_NOT_VOIDED}
       AND t.task_type = 'claim'
       AND t.timestamp >= ?
       ${whereExtraSql}

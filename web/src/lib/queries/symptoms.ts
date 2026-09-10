@@ -1,4 +1,5 @@
 import { getDb } from "../db";
+import { SQL_NOT_VOIDED } from "../taskStatus";
 import type { SymptomRow } from "@/types/dashboard";
 
 export async function getSymptoms(limit = 20): Promise<SymptomRow[]> {
@@ -11,7 +12,7 @@ export async function getSymptoms(limit = 20): Promise<SymptomRow[]> {
         GROUP_CONCAT(DISTINCT td.sku) as related_skus
       FROM task_details td
       JOIN tasks t ON t.id = td.task_id
-      WHERE t.status != 'VOIDED'
+      WHERE ${SQL_NOT_VOIDED}
         AND td.issue_group IS NOT NULL
         AND TRIM(td.issue_group) != ''
       GROUP BY td.issue_group

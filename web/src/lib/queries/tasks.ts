@@ -1,4 +1,5 @@
 import { getDb } from "../db";
+import { SQL_NOT_VOIDED } from "../taskStatus";
 import type { TaskListRow } from "@/types/dashboard";
 
 export interface TaskListFilters {
@@ -27,7 +28,7 @@ export async function getTasks(filters: TaskListFilters = {}): Promise<TaskListR
   const limit = Math.min(100, Math.max(1, filters.limit ?? 50));
   const offset = (page - 1) * limit;
 
-  const conditions: string[] = ["t.status != 'VOIDED'"];
+  const conditions: string[] = [SQL_NOT_VOIDED];
   const args: (string | number)[] = [];
 
   if (filters.type && filters.type !== "all") {
@@ -147,7 +148,7 @@ export async function getDistinctSkus(): Promise<string[]> {
     SELECT DISTINCT td.sku
     FROM task_details td
     JOIN tasks t ON t.id = td.task_id
-    WHERE t.status != 'VOIDED' AND td.sku IS NOT NULL AND TRIM(td.sku) != ''
+    WHERE ${SQL_NOT_VOIDED} AND td.sku IS NOT NULL AND TRIM(td.sku) != ''
     ORDER BY td.sku
   `);
   return r.rows.map((row: Record<string, unknown>) => String(row.sku ?? ""));

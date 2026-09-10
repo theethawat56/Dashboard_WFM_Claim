@@ -1,6 +1,7 @@
 import { getDb } from "../db";
 import { ensureNewColumns } from "../migrate";
 import { resolveFactorySkus, skuInSql } from "../factoryClaimSkus";
+import { SQL_NOT_VOIDED } from "../taskStatus";
 import type {
   FactoryClaimKpis,
   FactoryMatchRow,
@@ -51,8 +52,9 @@ export async function getFactoryKpis(skus?: string[] | null): Promise<FactoryCla
       SUM(CASE WHEN match_tier = 'orange' THEN 1 ELSE 0 END) as orange,
       SUM(CASE WHEN match_tier = 'yellow' THEN 1 ELSE 0 END) as yellow,
       SUM(CASE WHEN match_tier = 'gray' THEN 1 ELSE 0 END) as gray
-    FROM po_case_matches
-    WHERE ${skuFilter.sql}
+      FROM po_case_matches m
+      JOIN tasks t ON t.id = m.task_id
+      WHERE ${SQL_NOT_VOIDED} AND ${skuFilter.sql}
   `,
     args: skuFilter.args,
   });
@@ -70,7 +72,7 @@ export async function getFactoryKpis(skus?: string[] | null): Promise<FactoryCla
       FROM po_case_matches m
       LEFT JOIN tasks t ON t.id = m.task_id
       LEFT JOIN task_details td ON td.task_id = m.task_id
-      WHERE ${mSkuFilter.sql}
+      WHERE ${mSkuFilter.sql} AND ${SQL_NOT_VOIDED}
     `,
     args: [year, ...mSkuFilter.args],
   });
@@ -200,11 +202,12 @@ export async function getFactoryMatches(opts: {
   const page = Math.max(1, opts.page ?? 1);
   const limit = Math.min(200, Math.max(10, opts.limit ?? 50));
   const offset = (page - 1) * limit;
-  const where: string[] = ["1=1"];
+  const where: string[] = [SQL_NOT_VOIDED];
   const args: (string | number | null)[] = [];
 
   const fromSql = `
     FROM po_case_matches m
+    JOIN tasks t ON t.id = m.task_id
     LEFT JOIN (
       SELECT po_id, sku, MAX(product_name) as product_name
       FROM purchase_order_lines

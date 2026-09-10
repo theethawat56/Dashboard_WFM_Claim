@@ -1,5 +1,6 @@
 import { getDb } from "../db";
 import { ensureNewColumns } from "../migrate";
+import { SQL_NOT_VOIDED } from "../taskStatus";
 import { isFocText, isForeignFactory } from "./foreignSupplier";
 import {
   attachClaimRates,
@@ -282,7 +283,7 @@ export async function recomputePoMatches(): Promise<{ matched: number; gray: num
     SELECT t.id, t.task_number, t.task_type, td.sku, td.warranty_start_date, td.create_date
     FROM tasks t
     JOIN task_details td ON td.task_id = t.id
-    WHERE t.status != 'VOIDED'
+    WHERE ${SQL_NOT_VOIDED}
   `);
 
   const matches = [];
