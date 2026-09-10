@@ -112,7 +112,7 @@ export function ClaimTrackingTab() {
         <div>
           <h2 className="text-lg font-semibold text-slate-900">ตามเคลมรายเดือน</h2>
           <p className="text-sm text-slate-500">
-            ดูงานซ่อมและเคลมเฉพาะเดือนที่เลือก · ตัดงานยกเลิก (VOIDED) ออก · ในประกัน = ไม่เกิน 365 วันจากวันลงทะเบียน (รวมวันติดลบ)
+            ดูงานซ่อมและเคลมเฉพาะ SKU ที่กำหนด · เฉพาะเดือนที่เลือก · ตัดงานยกเลิก (VOIDED) ออก · ในประกัน = ไม่เกิน 365 วันจากวันลงทะเบียน (รวมวันติดลบ)
           </p>
         </div>
         <label className="text-sm text-slate-600">

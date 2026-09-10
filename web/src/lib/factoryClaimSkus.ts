@@ -1,4 +1,4 @@
-/** Allowlisted SKUs shown on the factory-claim tab (first-seen order, unique). */
+/** Allowlisted SKUs for factory-claim and claim-tracking tabs (first-seen order, unique). */
 export const FACTORY_CLAIM_SKUS: string[] = [
   "ATB092116",
   "ATB092105",

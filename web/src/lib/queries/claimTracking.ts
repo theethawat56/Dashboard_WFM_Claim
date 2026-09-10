@@ -1,4 +1,5 @@
 import { getDb } from "../db";
+import { resolveFactorySkus, skuInSql } from "../factoryClaimSkus";
 import { ensureNewColumns } from "../migrate";
 import { isTaskClosed, SQL_NOT_VOIDED } from "../taskStatus";
 import type {
@@ -59,6 +60,7 @@ export async function getClaimTracking(monthRaw?: string | null): Promise<ClaimT
   await ensureCompTables();
   const db = getDb();
   const month = resolveClaimMonth(monthRaw);
+  const skuFilter = skuInSql("td.sku", resolveFactorySkus(null));
   const monthExpr = `strftime('%Y-%m', datetime(t.timestamp / 1000, 'unixepoch', '+7 hours'))`;
   const daysExpr = `CASE
     WHEN td.warranty_start_date IS NOT NULL AND TRIM(td.warranty_start_date) != ''
@@ -99,10 +101,11 @@ export async function getClaimTracking(monthRaw?: string | null): Promise<ClaimT
       ) bt ON bt.task_id = t.id
       LEFT JOIN po_case_matches m ON m.task_id = t.id
       WHERE ${SQL_NOT_VOIDED}
+        AND ${skuFilter.sql}
         AND ${monthExpr} = ?
       ORDER BY t.timestamp DESC, t.task_number DESC
     `,
-    args: [month],
+    args: [...skuFilter.args, month],
   });
 
   const rows: ClaimTrackingRow[] = (list.rows as Record<string, unknown>[]).map((row) => {
@@ -148,11 +151,13 @@ export async function getClaimTracking(monthRaw?: string | null): Promise<ClaimT
         SELECT DISTINCT bt.batch_id
         FROM claim_comp_batch_tasks bt
         JOIN tasks t ON t.id = bt.task_id
+        JOIN task_details td ON td.task_id = t.id
         WHERE ${SQL_NOT_VOIDED}
+          AND ${skuFilter.sql}
           AND ${monthExpr} = ?
       )
     `,
-    args: [month],
+    args: [...skuFilter.args, month],
   });
 
   const monthValue = rows.reduce((sum, r) => {
@@ -174,12 +179,16 @@ export async function getClaimTracking(monthRaw?: string | null): Promise<ClaimT
     missing_symptom: rows.filter((r) => r.missing_symptom).length,
   };
 
-  const monthsRes = await db.execute(`
+  const monthsRes = await db.execute({
+    sql: `
     SELECT DISTINCT ${monthExpr} as m
     FROM tasks t
-    WHERE ${SQL_NOT_VOIDED} AND t.timestamp IS NOT NULL
+    JOIN task_details td ON td.task_id = t.id
+    WHERE ${SQL_NOT_VOIDED} AND t.timestamp IS NOT NULL AND ${skuFilter.sql}
     ORDER BY m DESC
-  `);
+  `,
+    args: skuFilter.args,
+  });
   const months = (monthsRes.rows as { m?: string }[])
     .map((r) => String(r.m ?? ""))
     .filter((m) => /^\d{4}-\d{2}$/.test(m));
