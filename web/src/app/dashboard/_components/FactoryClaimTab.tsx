@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { FACTORY_CLAIM_SKUS } from "@/lib/factoryClaimSkus";
 import { ClaimCompensationDialog } from "./ClaimCompensationDialog";
+import { SkuExcelFilter } from "./SkuExcelFilter";
 import type {
   FactoryClaimKpis,
   FactoryMatchRow,
@@ -50,19 +52,34 @@ export function FactoryClaimTab() {
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dialogSku, setDialogSku] = useState<string | null>(null);
+  const [selectedSkus, setSelectedSkus] = useState<string[]>(() => [...FACTORY_CLAIM_SKUS]);
+  const [nameBySku, setNameBySku] = useState<Record<string, string>>({});
+
+  const skusQuery = useMemo(() => selectedSkus.join(","), [selectedSkus]);
 
   const loadKpisAndSummary = useCallback(async () => {
+    const qs = `skus=${encodeURIComponent(skusQuery)}`;
     const [k, s, p] = await Promise.all([
-      fetch("/api/dashboard/factory-claims?view=kpis"),
-      fetch("/api/dashboard/factory-claims?view=sku-summary"),
-      fetch("/api/dashboard/factory-claims?view=pos"),
+      fetch(`/api/dashboard/factory-claims?view=kpis&${qs}`),
+      fetch(`/api/dashboard/factory-claims?view=sku-summary&${qs}`),
+      fetch(`/api/dashboard/factory-claims?view=pos&${qs}`),
     ]);
     if (!k.ok) throw new Error("โหลด KPI ไม่สำเร็จ");
     setKpis(await k.json());
-    if (s.ok) setSkuRows(await s.json());
+    if (s.ok) {
+      const rows = (await s.json()) as FactoryPoSkuRow[];
+      setSkuRows(rows);
+      setNameBySku((prev) => {
+        const next = { ...prev };
+        for (const r of rows) {
+          if (r.sku && r.product_name && !next[r.sku]) next[r.sku] = r.product_name;
+        }
+        return next;
+      });
+    }
     if (p.ok) setPos(await p.json());
     setLoading(false);
-  }, []);
+  }, [skusQuery]);
 
   const loadMatches = useCallback(async () => {
     const params = new URLSearchParams({
@@ -71,6 +88,7 @@ export function FactoryClaimTab() {
       limit: "50",
       type,
       tier,
+      skus: skusQuery,
     });
     if (search.trim()) params.set("search", search.trim());
     const res = await fetch(`/api/dashboard/factory-claims?${params}`);
@@ -78,7 +96,7 @@ export function FactoryClaimTab() {
     const json = await res.json();
     setMatches(json.rows ?? []);
     setMatchTotal(Number(json.total ?? 0));
-  }, [page, type, tier, search]);
+  }, [page, type, tier, search, skusQuery]);
 
   useEffect(() => {
     loadKpisAndSummary().catch((e) => {
@@ -116,6 +134,7 @@ export function FactoryClaimTab() {
   const skuFiltered = search.trim()
     ? skuRows.filter(
         (r) =>
+          r.product_name.toLowerCase().includes(search.toLowerCase()) ||
           r.sku.toLowerCase().includes(search.toLowerCase()) ||
           r.supplier_name.toLowerCase().includes(search.toLowerCase()) ||
           r.po_number_out.toLowerCase().includes(search.toLowerCase())
@@ -148,7 +167,11 @@ export function FactoryClaimTab() {
       )}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi title="ยอดเสียหาย (ต้นทุน PO)" value={kpis ? money(kpis.damage_total) : "—"} hint="บาท · ต่อเคส × ต้นทุนต่อหน่วย" />
+        <Kpi
+          title="ยอดเสียหาย (ต้นทุน PO)"
+          value={kpis ? money(kpis.damage_total) : "—"}
+          hint={kpis ? `บาท · ปี ${kpis.damage_year} · ต่อเคส × ต้นทุนต่อหน่วย` : "บาท · เฉพาะปีปัจจุบัน"}
+        />
         <Kpi title="จับคู่ได้" value={kpis ? num(kpis.matched) : "—"} hint={kpis ? `เขียว ${kpis.green} · ส้ม ${kpis.orange} · เหลือง ${kpis.yellow}` : ""} />
         <Kpi title="ไม่พบ PO" value={kpis ? num(kpis.gray) : "—"} hint="ไม่มี SKU ใน PO ต่างประเทศ" />
         <Kpi title="PO ต่างประเทศ" value={kpis ? num(kpis.po_count) : "—"} hint={kpis?.last_synced_at ? `ซิงก์ล่าสุด ${kpis.last_synced_at}` : "ยังไม่ซิงก์"} />
@@ -157,7 +180,7 @@ export function FactoryClaimTab() {
       <div className="flex flex-wrap gap-2">
         {(
           [
-            ["summary", "สรุป PO × SKU"],
+            ["summary", "สรุป PO × สินค้า"],
             ["matches", "รายการงานที่จับคู่"],
             ["pos", "หัว PO"],
             ["notes", "หมายเหตุการจับคู่"],
@@ -174,22 +197,33 @@ export function FactoryClaimTab() {
             {label}
           </button>
         ))}
-        <input
-          type="text"
-          placeholder="ค้นหา SKU / PO / ซัพพลายเออร์ / เลขงาน"
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(1);
-          }}
-          className="ml-auto h-8 w-72 rounded-md border border-slate-300 px-3 text-sm"
-        />
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <SkuExcelFilter
+            selected={selectedSkus}
+            nameBySku={nameBySku}
+            onChange={(next) => {
+              setSelectedSkus(next);
+              setPage(1);
+              setLoading(true);
+            }}
+          />
+          <input
+            type="text"
+            placeholder="ค้นหาชื่อสินค้า / SKU / PO / ซัพพลายเออร์ / เลขงาน"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            className="h-8 w-72 rounded-md border border-slate-300 px-3 text-sm"
+          />
+        </div>
       </div>
 
       {inner === "summary" && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Claim rate ต่อ PO × SKU</CardTitle>
+            <CardTitle className="text-base">Claim rate ต่อ PO × สินค้า</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto rounded-lg border border-slate-200">
@@ -199,7 +233,7 @@ export function FactoryClaimTab() {
                     <th className="px-3 py-2 font-medium">PO (Reference)</th>
                     <th className="px-3 py-2 font-medium">วันที่</th>
                     <th className="px-3 py-2 font-medium">ซัพพลายเออร์</th>
-                    <th className="px-3 py-2 font-medium">SKU</th>
+                    <th className="px-3 py-2 font-medium">สินค้า</th>
                     <th className="px-3 py-2 font-medium text-right">Qty PO</th>
                     <th className="px-3 py-2 font-medium text-right">ต้นทุน/หน่วย</th>
                     <th className="px-3 py-2 font-medium text-right">งานที่จับคู่</th>
@@ -218,7 +252,7 @@ export function FactoryClaimTab() {
                   ) : skuFiltered.length === 0 ? (
                     <tr>
                       <td colSpan={10} className="px-3 py-8 text-center text-slate-400">
-                        ยังไม่มี PO — กดซิงก์จาก Zort
+                        ไม่พบข้อมูลของ SKU ที่เลือก — ลองเปลี่ยนตัวกรอง หรือกดซิงก์จาก Zort
                       </td>
                     </tr>
                   ) : (
@@ -229,7 +263,9 @@ export function FactoryClaimTab() {
                         <td className="px-3 py-2 max-w-[220px] truncate" title={r.supplier_name}>
                           {r.supplier_name}
                         </td>
-                        <td className="px-3 py-2 font-mono">{r.sku}</td>
+                        <td className="px-3 py-2 max-w-[280px]" title={r.sku}>
+                          {r.product_name}
+                        </td>
                         <td className="px-3 py-2 text-right">{num(r.quantity)}</td>
                         <td className="px-3 py-2 text-right">{money(r.unit_cost)}</td>
                         <td className="px-3 py-2 text-right">{num(r.matched_cases)}</td>
@@ -295,7 +331,7 @@ export function FactoryClaimTab() {
                 <thead className="border-b border-slate-200 bg-slate-50">
                   <tr>
                     <th className="px-3 py-2 font-medium">งาน</th>
-                    <th className="px-3 py-2 font-medium">SKU</th>
+                    <th className="px-3 py-2 font-medium">สินค้า</th>
                     <th className="px-3 py-2 font-medium">วันอ้างอิง</th>
                     <th className="px-3 py-2 font-medium">ทียร์</th>
                     <th className="px-3 py-2 font-medium">PO</th>
@@ -311,7 +347,9 @@ export function FactoryClaimTab() {
                         <div className="font-mono text-xs">{m.task_number}</div>
                         <div className="text-xs text-slate-500">{m.task_type === "claim" ? "เคลม" : "ซ่อม"}</div>
                       </td>
-                      <td className="px-3 py-2 font-mono text-xs">{m.sku || "—"}</td>
+                      <td className="px-3 py-2 max-w-[240px] text-xs" title={m.sku || undefined}>
+                        {m.product_name || m.sku || "—"}
+                      </td>
                       <td className="px-3 py-2 whitespace-nowrap text-xs">
                         {m.ref_date ?? "—"}
                         <div className="text-slate-400">

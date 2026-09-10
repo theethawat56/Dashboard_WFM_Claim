@@ -157,6 +157,7 @@ export interface FactoryClaimKpis {
   yellow: number;
   gray: number;
   damage_total: number;
+  damage_year: string;
   last_synced_at: string | null;
 }
 
@@ -170,6 +171,7 @@ export interface FactoryPoSkuRow {
   payment_status: string | null;
   supplier_name: string;
   sku: string;
+  product_name: string;
   quantity: number;
   unit_cost: number;
   matched_cases: number;
@@ -182,6 +184,7 @@ export interface FactoryMatchRow {
   task_number: string;
   task_type: string;
   sku: string;
+  product_name: string;
   supplier_name: string;
   ref_date: string | null;
   ref_date_source: string;

@@ -1,5 +1,6 @@
 import { getDb } from "../db";
 import { ensureNewColumns } from "../migrate";
+import { resolveFactorySkus, skuInSql } from "../factoryClaimSkus";
 import type {
   FactoryClaimKpis,
   FactoryMatchRow,
@@ -12,27 +13,67 @@ async function ensure(): Promise<void> {
   await ensureNewColumns();
 }
 
-export async function getFactoryKpis(): Promise<FactoryClaimKpis> {
+function bangkokYear(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+  }).format(new Date());
+}
+
+export async function getFactoryKpis(skus?: string[] | null): Promise<FactoryClaimKpis> {
   await ensure();
   const db = getDb();
-  const po = await db.execute(
-    `SELECT COUNT(*) as c FROM purchase_orders WHERE is_foreign = 1`
-  );
-  const lines = await db.execute(
-    `SELECT COUNT(*) as c FROM purchase_order_lines l
-     JOIN purchase_orders p ON p.id = l.po_id WHERE p.is_foreign = 1`
-  );
-  const tiers = await db.execute(`
+  const year = bangkokYear();
+  const selected = resolveFactorySkus(skus);
+  const skuFilter = skuInSql("sku", selected);
+  const mSkuFilter = skuInSql("m.sku", selected);
+  const lSkuFilter = skuInSql("l.sku", selected);
+
+  const po = await db.execute({
+    sql: `SELECT COUNT(DISTINCT p.id) as c
+          FROM purchase_orders p
+          JOIN purchase_order_lines l ON l.po_id = p.id
+          WHERE p.is_foreign = 1 AND ${lSkuFilter.sql}`,
+    args: lSkuFilter.args,
+  });
+  const lines = await db.execute({
+    sql: `SELECT COUNT(*) as c FROM purchase_order_lines l
+     JOIN purchase_orders p ON p.id = l.po_id
+     WHERE p.is_foreign = 1 AND ${lSkuFilter.sql}`,
+    args: lSkuFilter.args,
+  });
+  const tiers = await db.execute({
+    sql: `
     SELECT
       COUNT(*) as total,
       SUM(CASE WHEN match_tier != 'gray' THEN 1 ELSE 0 END) as matched,
       SUM(CASE WHEN match_tier = 'green' THEN 1 ELSE 0 END) as green,
       SUM(CASE WHEN match_tier = 'orange' THEN 1 ELSE 0 END) as orange,
       SUM(CASE WHEN match_tier = 'yellow' THEN 1 ELSE 0 END) as yellow,
-      SUM(CASE WHEN match_tier = 'gray' THEN 1 ELSE 0 END) as gray,
-      COALESCE(SUM(CASE WHEN match_tier != 'gray' THEN COALESCE(unit_cost, 0) ELSE 0 END), 0) as damage_total
+      SUM(CASE WHEN match_tier = 'gray' THEN 1 ELSE 0 END) as gray
     FROM po_case_matches
-  `);
+    WHERE ${skuFilter.sql}
+  `,
+    args: skuFilter.args,
+  });
+  const damage = await db.execute({
+    sql: `
+      SELECT COALESCE(SUM(
+        CASE WHEN m.match_tier != 'gray'
+          AND COALESCE(
+            strftime('%Y', datetime(t.timestamp / 1000, 'unixepoch', '+7 hours')),
+            substr(td.create_date, 1, 4),
+            substr(m.ref_date, 1, 4)
+          ) = ?
+        THEN COALESCE(m.unit_cost, 0) ELSE 0 END
+      ), 0) as damage_total
+      FROM po_case_matches m
+      LEFT JOIN tasks t ON t.id = m.task_id
+      LEFT JOIN task_details td ON td.task_id = m.task_id
+      WHERE ${mSkuFilter.sql}
+    `,
+    args: [year, ...mSkuFilter.args],
+  });
   const sync = await db.execute(
     `SELECT finished_at FROM sync_log WHERE sync_type = 'purchase_orders' ORDER BY id DESC LIMIT 1`
   );
@@ -46,21 +87,28 @@ export async function getFactoryKpis(): Promise<FactoryClaimKpis> {
     orange: Number(t.orange ?? 0),
     yellow: Number(t.yellow ?? 0),
     gray: Number(t.gray ?? 0),
-    damage_total: Number(t.damage_total ?? 0),
+    damage_total: Number((damage.rows[0] as { damage_total?: number })?.damage_total ?? 0),
+    damage_year: year,
     last_synced_at: ((sync.rows[0] as { finished_at?: string } | undefined)?.finished_at) ?? null,
   };
 }
 
-export async function getFactoryPoHeaders(): Promise<FactoryPoHeaderRow[]> {
+export async function getFactoryPoHeaders(skus?: string[] | null): Promise<FactoryPoHeaderRow[]> {
   await ensure();
   const db = getDb();
-  const r = await db.execute(`
+  const selected = resolveFactorySkus(skus);
+  const lSku = skuInSql("l.sku", selected);
+  const r = await db.execute({
+    sql: `
     SELECT id, po_number, po_date, status, payment_status, supplier_name, supplier_code,
            reference, total_amount, total_quantity, payment_amount, currency, created_by, payment_term
     FROM purchase_orders
     WHERE is_foreign = 1
+      AND id IN (SELECT l.po_id FROM purchase_order_lines l WHERE ${lSku.sql})
     ORDER BY po_date DESC, id DESC
-  `);
+  `,
+    args: lSku.args,
+  });
   return (r.rows as Record<string, unknown>[]).map((row) => ({
     id: Number(row.id),
     po_number: String(row.po_number ?? ""),
@@ -79,10 +127,13 @@ export async function getFactoryPoHeaders(): Promise<FactoryPoHeaderRow[]> {
   }));
 }
 
-export async function getFactoryPoSkuSummary(): Promise<FactoryPoSkuRow[]> {
+export async function getFactoryPoSkuSummary(skus?: string[] | null): Promise<FactoryPoSkuRow[]> {
   await ensure();
   const db = getDb();
-  const r = await db.execute(`
+  const selected = resolveFactorySkus(skus);
+  const lSku = skuInSql("l.sku", selected);
+  const r = await db.execute({
+    sql: `
     SELECT
       p.id as po_id,
       COALESCE(NULLIF(NULLIF(TRIM(p.reference), ''), '-'), p.po_number) as po_number_out,
@@ -93,6 +144,7 @@ export async function getFactoryPoSkuSummary(): Promise<FactoryPoSkuRow[]> {
       p.payment_status,
       p.supplier_name,
       l.sku,
+      l.product_name,
       l.quantity,
       l.unit_cost,
       COALESCE(m.matched_cases, 0) as matched_cases,
@@ -110,8 +162,11 @@ export async function getFactoryPoSkuSummary(): Promise<FactoryPoSkuRow[]> {
     ) m ON m.po_id = l.po_id AND m.sku = l.sku
     WHERE p.is_foreign = 1 AND p.is_foc = 0
       AND l.sku IS NOT NULL AND TRIM(l.sku) != ''
+      AND ${lSku.sql}
     ORDER BY damage_amount DESC, p.po_date DESC
-  `);
+  `,
+    args: lSku.args,
+  });
   return (r.rows as Record<string, unknown>[]).map((row) => ({
     po_id: Number(row.po_id),
     po_number_out: String(row.po_number_out ?? ""),
@@ -122,6 +177,7 @@ export async function getFactoryPoSkuSummary(): Promise<FactoryPoSkuRow[]> {
     payment_status: row.payment_status != null ? String(row.payment_status) : null,
     supplier_name: String(row.supplier_name ?? ""),
     sku: String(row.sku ?? ""),
+    product_name: String(row.product_name ?? "").trim() || String(row.sku ?? ""),
     quantity: Number(row.quantity ?? 0),
     unit_cost: Number(row.unit_cost ?? 0),
     matched_cases: Number(row.matched_cases ?? 0),
@@ -135,6 +191,7 @@ export async function getFactoryMatches(opts: {
   type?: "repair" | "claim" | "all";
   tier?: PoMatchTier | "all";
   sku?: string;
+  skus?: string[] | null;
   page?: number;
   limit?: number;
 }): Promise<{ rows: FactoryMatchRow[]; total: number; page: number; limit: number }> {
@@ -146,36 +203,55 @@ export async function getFactoryMatches(opts: {
   const where: string[] = ["1=1"];
   const args: (string | number | null)[] = [];
 
+  const fromSql = `
+    FROM po_case_matches m
+    LEFT JOIN (
+      SELECT po_id, sku, MAX(product_name) as product_name
+      FROM purchase_order_lines
+      GROUP BY po_id, sku
+    ) l ON l.po_id = m.po_id AND l.sku = m.sku
+    LEFT JOIN task_details td ON td.task_id = m.task_id
+  `;
+  const productNameExpr = `COALESCE(NULLIF(TRIM(l.product_name), ''), NULLIF(TRIM(td.product_model), ''), m.sku)`;
+
   if (opts.type && opts.type !== "all") {
-    where.push("task_type = ?");
+    where.push("m.task_type = ?");
     args.push(opts.type);
   }
   if (opts.tier && opts.tier !== "all") {
-    where.push("match_tier = ?");
+    where.push("m.match_tier = ?");
     args.push(opts.tier);
   }
+  const selected = resolveFactorySkus(opts.skus);
+  const skuList = skuInSql("m.sku", selected);
+  where.push(skuList.sql);
+  args.push(...skuList.args);
   if (opts.sku && opts.sku.trim()) {
-    where.push("sku = ?");
+    where.push("m.sku = ?");
     args.push(opts.sku.trim());
   }
   if (opts.search && opts.search.trim()) {
-    where.push("(task_number LIKE ? OR sku LIKE ? OR po_number_out LIKE ? OR supplier_name LIKE ?)");
+    where.push(
+      `(m.task_number LIKE ? OR m.sku LIKE ? OR ${productNameExpr} LIKE ? OR m.po_number_out LIKE ? OR m.supplier_name LIKE ?)`
+    );
     const q = `%${opts.search.trim()}%`;
-    args.push(q, q, q, q);
+    args.push(q, q, q, q, q);
   }
   const whereSql = where.join(" AND ");
 
   const count = await db.execute({
-    sql: `SELECT COUNT(*) as c FROM po_case_matches WHERE ${whereSql}`,
+    sql: `SELECT COUNT(*) as c ${fromSql} WHERE ${whereSql}`,
     args,
   });
   const total = Number((count.rows[0] as { c?: number })?.c ?? 0);
 
   const r = await db.execute({
-    sql: `SELECT * FROM po_case_matches WHERE ${whereSql}
-          ORDER BY CASE match_tier
+    sql: `SELECT m.*, ${productNameExpr} as product_name
+          ${fromSql}
+          WHERE ${whereSql}
+          ORDER BY CASE m.match_tier
             WHEN 'orange' THEN 0 WHEN 'yellow' THEN 1 WHEN 'green' THEN 2 ELSE 3 END,
-            ref_date DESC, task_number DESC
+            m.ref_date DESC, m.task_number DESC
           LIMIT ? OFFSET ?`,
     args: [...args, limit, offset],
   });
@@ -185,6 +261,7 @@ export async function getFactoryMatches(opts: {
     task_number: String(row.task_number ?? ""),
     task_type: String(row.task_type ?? ""),
     sku: String(row.sku ?? ""),
+    product_name: String(row.product_name ?? "").trim() || String(row.sku ?? ""),
     supplier_name: String(row.supplier_name ?? ""),
     ref_date: row.ref_date != null ? String(row.ref_date) : null,
     ref_date_source: String(row.ref_date_source ?? ""),
