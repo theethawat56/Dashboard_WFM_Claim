@@ -32,10 +32,12 @@ export interface Task {
     taskInfo?: {
       refNumbers?: string[];
       ref_numbers?: string[];
+      isFromMaintenance?: boolean;
     };
     task_info?: {
       refNumbers?: string[];
       ref_numbers?: string[];
+      isFromMaintenance?: boolean;
     };
     shippingOption?: string;
     shipping_option?: string;

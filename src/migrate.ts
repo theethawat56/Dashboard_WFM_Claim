@@ -122,6 +122,7 @@ const NEW_COLUMNS: Array<{ table: string; column: string; sql: string }> = [
   { table: "task_details", column: "is_reclaim", sql: "ALTER TABLE task_details ADD COLUMN is_reclaim INTEGER DEFAULT 0" },
   { table: "task_details", column: "ref_task_numbers", sql: "ALTER TABLE task_details ADD COLUMN ref_task_numbers TEXT DEFAULT ''" },
   { table: "task_details", column: "claim_type", sql: "ALTER TABLE task_details ADD COLUMN claim_type TEXT DEFAULT ''" },
+  { table: "task_details", column: "is_from_maintenance", sql: "ALTER TABLE task_details ADD COLUMN is_from_maintenance INTEGER DEFAULT 0" },
   { table: "task_details", column: "customer_guid", sql: "ALTER TABLE task_details ADD COLUMN customer_guid TEXT" },
   { table: "task_details", column: "warranty_id", sql: "ALTER TABLE task_details ADD COLUMN warranty_id TEXT" },
   { table: "task_details", column: "warranty_start_date", sql: "ALTER TABLE task_details ADD COLUMN warranty_start_date TEXT" },

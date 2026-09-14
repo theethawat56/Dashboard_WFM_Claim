@@ -110,6 +110,11 @@ function getRefTaskNumbers(task: Task): string {
   return arr.join(", ");
 }
 
+function isFromMaintenance(task: Task): boolean {
+  const info = task.detail?.taskInfo ?? task.detail?.task_info;
+  return info?.isFromMaintenance === true;
+}
+
 function getProductId(task: Task): string | null {
   const info = getProductInfo(task);
   const value = (info?.id as string | undefined) ?? "";
@@ -245,18 +250,19 @@ export async function upsertTasks(
     const issueGroup = getIssueGroup(task, taskType);
     const refTaskNumbers = getRefTaskNumbers(task);
     const claimType = getClaimType(task, taskType);
+    const fromMaintenance = isFromMaintenance(task) ? 1 : 0;
 
     await db.execute({
       sql: `INSERT OR REPLACE INTO task_details (
         task_id, customer_name, customer_phone, customer_province,
         product_model, product_serial, issue_description, shipping_option,
         create_date, ref_numbers,
-        sku, issue_group, is_reclaim, ref_task_numbers, claim_type,
+        sku, issue_group, is_reclaim, ref_task_numbers, claim_type, is_from_maintenance,
         customer_guid, warranty_id,
         warranty_start_date, warranty_start_ts, warranty_period,
         warranty_order_number, warranty_serial, days_to_repair
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         COALESCE((SELECT warranty_start_date FROM task_details WHERE task_id = ?), NULL),
         COALESCE((SELECT warranty_start_ts FROM task_details WHERE task_id = ?), NULL),
         COALESCE((SELECT warranty_period FROM task_details WHERE task_id = ?), NULL),
@@ -280,6 +286,7 @@ export async function upsertTasks(
         isReclaimFlag,
         refTaskNumbers,
         claimType,
+        fromMaintenance,
         customerGuid,
         warrantyId,
         id,

@@ -73,6 +73,7 @@ export interface Task {
       warrantyId?: string;
       createDate?: string;
       create_date?: string;
+      isFromMaintenance?: boolean;
     };
     task_info?: {
       refNumbers?: string[];
@@ -80,6 +81,7 @@ export interface Task {
       warrantyId?: string;
       createDate?: string;
       create_date?: string;
+      isFromMaintenance?: boolean;
     };
     shippingOption?: string;
     shipping_option?: string;
