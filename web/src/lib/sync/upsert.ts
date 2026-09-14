@@ -38,9 +38,13 @@ function getRefNumbers(task: Task): string[] {
 }
 
 function isReclaim(task: Task): boolean {
-  const parentIds = getParentIds(task);
-  const refNumbers = getRefNumbers(task);
-  return parentIds.length > 0 || refNumbers.length > 0;
+  // Quote jobs (QMNT-...) are not reclaims; only a prior repair (MNT-...) counts.
+  return getRefNumbers(task).some((n) =>
+    String(n ?? "")
+      .trim()
+      .toUpperCase()
+      .startsWith("MNT-")
+  );
 }
 
 function isUnfixed(task: Task): boolean {

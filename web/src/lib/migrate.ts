@@ -173,6 +173,27 @@ async function runEnsure(): Promise<MigrateReport> {
     }
   }
 
+  try {
+    await db.execute(`
+      UPDATE task_details
+      SET is_reclaim = CASE
+        WHEN instr(',' || replace(COALESCE(ref_task_numbers, ''), ' ', '') || ',', ',MNT-') > 0 THEN 1
+        ELSE 0
+      END
+    `);
+    await db.execute(`
+      UPDATE tasks
+      SET is_reclaim = COALESCE(
+        (SELECT td.is_reclaim FROM task_details td WHERE td.task_id = tasks.id),
+        0
+      )
+    `);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    report.failed.push({ column: "is_reclaim", error: msg });
+    console.warn(`[migrate] reclaim flag backfill failed: ${msg}`);
+  }
+
   return report;
 }
 

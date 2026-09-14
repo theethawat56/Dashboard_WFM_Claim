@@ -1,8 +1,10 @@
 import { getDb } from "../db";
+import { ensureNewColumns } from "../migrate";
 import { SQL_NOT_VOIDED } from "../taskStatus";
 import type { SummaryStats } from "@/types/dashboard";
 
 export async function getSummary(): Promise<SummaryStats> {
+  await ensureNewColumns();
   const db = getDb();
   const r = await db.execute(`
     SELECT

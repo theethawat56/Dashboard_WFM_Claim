@@ -1,4 +1,5 @@
 import { getDb } from "../db";
+import { ensureNewColumns } from "../migrate";
 import { SQL_NOT_VOIDED } from "../taskStatus";
 import type {
   ClaimCompBatch,
@@ -29,6 +30,7 @@ let tablesEnsured = false;
 
 async function ensureTables() {
   if (tablesEnsured) return;
+  await ensureNewColumns();
   const db = getDb();
   for (const sql of ENSURE_TABLES_SQL) await db.execute(sql);
   tablesEnsured = true;

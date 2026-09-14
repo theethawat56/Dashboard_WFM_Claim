@@ -169,6 +169,24 @@ async function runAlterStatements(): Promise<void> {
       console.warn("[migrate] ALTER TABLE failed (column may already exist):", sql, err);
     }
   }
+  try {
+    await db.execute(`
+      UPDATE task_details
+      SET is_reclaim = CASE
+        WHEN instr(',' || replace(COALESCE(ref_task_numbers, ''), ' ', '') || ',', ',MNT-') > 0 THEN 1
+        ELSE 0
+      END
+    `);
+    await db.execute(`
+      UPDATE tasks
+      SET is_reclaim = COALESCE(
+        (SELECT td.is_reclaim FROM task_details td WHERE td.task_id = tasks.id),
+        0
+      )
+    `);
+  } catch (err) {
+    console.warn("[migrate] reclaim flag backfill failed (non-fatal):", err);
+  }
 }
 
 /**
