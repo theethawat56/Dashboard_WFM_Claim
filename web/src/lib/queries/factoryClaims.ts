@@ -157,7 +157,7 @@ export async function getFactoryKpis(
     args: matchArgs,
   });
 
-  const damageWhere = [...matchWhere];
+  const damageWhere = [...matchWhere, "m.task_type = 'claim'"];
   const damageArgs: (string | number)[] = [...matchArgs];
   if (!hasDateRange) {
     damageWhere.push(`COALESCE(

@@ -181,7 +181,7 @@ export function FactoryClaimTab() {
         <Kpi
           title="ยอดเสียหาย (ต้นทุน PO)"
           value={kpis ? money(kpis.damage_total) : "—"}
-          hint={kpis ? `บาท · ${kpis.damage_year} · ในประกัน · ต่อเคส × ต้นทุนต่อหน่วย` : "บาท · ในประกัน"}
+          hint={kpis ? `บาท · ${kpis.damage_year} · ในประกัน · เฉพาะ CLM × ต้นทุนต่อหน่วย` : "บาท · ในประกัน · เฉพาะ CLM"}
         />
         <Kpi title="จับคู่ได้" value={kpis ? num(kpis.matched) : "—"} hint={kpis ? `เขียว ${kpis.green} · ส้ม ${kpis.orange} · เหลือง ${kpis.yellow}` : ""} />
         <Kpi title="ไม่พบ PO" value={kpis ? num(kpis.gray) : "—"} hint="ไม่มี SKU ใน PO ต่างประเทศ" />
@@ -551,7 +551,8 @@ export function FactoryClaimTab() {
               <li>ตัด FOC เสมอ (คำว่า FOC ใน PO Number / Reference)</li>
               <li>PO_number ที่แสดง = คอลัมน์ Reference ถ้าว่างใช้ PO Number</li>
               <li>Claim Rate % = จำนวนงานที่จับคู่กับ (PO, SKU) / จำนวนในบรรทัด PO ของ SKU นั้น × 100</li>
-              <li>ยอดเสียหาย = ต้นทุนต่อหน่วยในบรรทัด PO × จำนวนงานที่จับคู่ (สมมติ 1 งาน = 1 เครื่อง)</li>
+              <li>KPI ยอดเสียหาย (ต้นทุน PO) นับเฉพาะงาน CLM ในประกันที่จับคู่ได้ ไม่รวมงานซ่อม MNT</li>
+              <li>ยอดเสียหายในตารางสรุป = ต้นทุนต่อหน่วยในบรรทัด PO × จำนวนงานที่จับคู่ (สมมติ 1 งาน = 1 เครื่อง)</li>
               <li>Payment Term ไม่มีใน API Zort จึงเว้นว่าง</li>
               <li>ดึงเฉพาะซัพพลายเออร์ต่างประเทศที่เป็น Co./Ltd/Limited/PTE/Corporation ตัด FOC, Test Supplier, Harvey, ชื่อว่าง</li>
             </ul>
