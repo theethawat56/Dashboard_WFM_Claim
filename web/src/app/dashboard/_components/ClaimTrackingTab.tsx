@@ -112,7 +112,7 @@ export function ClaimTrackingTab() {
         <div>
           <h2 className="text-lg font-semibold text-slate-900">ตามเคลมรายเดือน</h2>
           <p className="text-sm text-slate-500">
-            ดูงานซ่อมและเคลมเฉพาะ SKU ที่กำหนด · เฉพาะเดือนที่เลือก · ตัดงานยกเลิก (VOIDED) ออก · ในประกัน = ไม่เกิน 365 วันจากวันลงทะเบียน (รวมวันติดลบ)
+            ดูงานซ่อมและเคลมเฉพาะ SKU ที่กำหนด · เฉพาะเดือนที่เลือก · ตัดงานยกเลิก (VOIDED) ออก · วันรับประกัน = วันลงทะเบียนเลื่อนไป 14 วัน · ในประกัน = ไม่เกิน 365 วันจากวันรับประกัน (รวมวันติดลบ)
           </p>
         </div>
         <label className="text-sm text-slate-600">
@@ -226,7 +226,7 @@ export function ClaimTrackingTab() {
                   <th className="px-3 py-2 font-medium">S/N</th>
                   <th className="px-3 py-2 font-medium">อาการเสีย</th>
                   <th className="px-3 py-2 font-medium">วันสร้าง</th>
-                  <th className="px-3 py-2 font-medium">วันลงทะเบียน</th>
+                  <th className="px-3 py-2 font-medium">วันรับประกัน</th>
                   <th className="px-3 py-2 font-medium text-right">อายุ (วัน)</th>
                   <th className="px-3 py-2 font-medium">ประกัน</th>
                   <th className="px-3 py-2 font-medium">สถานะ</th>

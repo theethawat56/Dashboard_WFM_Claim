@@ -73,7 +73,7 @@ export function TaskListTable({
               </th>
               <th className="px-4 py-3 font-medium text-slate-700">วันที่</th>
               <th className="px-4 py-3 font-medium text-slate-700">
-                วันเริ่มประกัน
+                วันรับประกัน
               </th>
               <th className="px-4 py-3 font-medium text-slate-700">
                 อายุก่อนซ่อม (วัน)

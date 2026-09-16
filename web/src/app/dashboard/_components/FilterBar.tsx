@@ -189,7 +189,7 @@ export function FilterBar({
         <>
           <div className="min-w-[150px]">
             <label className="mb-1 block text-xs font-medium text-slate-600">
-              วันเริ่มประกัน (ตั้งแต่)
+              วันรับประกัน (ตั้งแต่)
             </label>
             <input
               type="date"
@@ -200,7 +200,7 @@ export function FilterBar({
           </div>
           <div className="min-w-[150px]">
             <label className="mb-1 block text-xs font-medium text-slate-600">
-              วันเริ่มประกัน (ถึง)
+              วันรับประกัน (ถึง)
             </label>
             <input
               type="date"

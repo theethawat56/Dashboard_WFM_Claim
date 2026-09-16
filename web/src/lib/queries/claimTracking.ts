@@ -2,6 +2,7 @@ import { getDb } from "../db";
 import { resolveFactorySkus, skuInSql } from "../factoryClaimSkus";
 import { ensureNewColumns } from "../migrate";
 import { isTaskClosed, SQL_NOT_VOIDED } from "../taskStatus";
+import { sqlDaysToRepairExpr, sqlShiftedWarrantyDate } from "../warrantyBuffer";
 import type {
   ClaimTrackingData,
   ClaimTrackingKpis,
@@ -62,14 +63,7 @@ export async function getClaimTracking(monthRaw?: string | null): Promise<ClaimT
   const month = resolveClaimMonth(monthRaw);
   const skuFilter = skuInSql("td.sku", resolveFactorySkus(null));
   const monthExpr = `strftime('%Y-%m', datetime(t.timestamp / 1000, 'unixepoch', '+7 hours'))`;
-  const daysExpr = `CASE
-    WHEN td.warranty_start_date IS NOT NULL AND TRIM(td.warranty_start_date) != ''
-    THEN CAST(
-      julianday(date(datetime(t.timestamp / 1000, 'unixepoch', '+7 hours')))
-      - julianday(td.warranty_start_date)
-    AS INTEGER)
-    ELSE td.days_to_repair
-  END`;
+  const daysExpr = sqlDaysToRepairExpr();
 
   const list = await db.execute({
     sql: `
@@ -85,7 +79,7 @@ export async function getClaimTracking(monthRaw?: string | null): Promise<ClaimT
         td.issue_description,
         td.issue_group,
         td.create_date,
-        td.warranty_start_date,
+        ${sqlShiftedWarrantyDate()} as warranty_start_date,
         ${daysExpr} as days_from_register,
         CASE WHEN bt.task_id IS NOT NULL THEN 1 ELSE 0 END as factory_recorded,
         bt.recorded_amount,

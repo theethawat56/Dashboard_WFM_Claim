@@ -1,5 +1,6 @@
 import { getDb } from "../db";
 import { SQL_NOT_VOIDED } from "../taskStatus";
+import { sqlDaysToRepairExpr, sqlShiftedWarrantyDate } from "../warrantyBuffer";
 import type { TaskListRow } from "@/types/dashboard";
 
 export interface TaskListFilters {
@@ -56,15 +57,16 @@ export async function getTasks(filters: TaskListFilters = {}): Promise<TaskListR
     args.push(toEnd.getTime());
   }
   if (filters.warrantyFrom) {
-    const fromMs = new Date(filters.warrantyFrom).getTime();
-    conditions.push("td.warranty_start_ts IS NOT NULL AND td.warranty_start_ts >= ?");
-    args.push(fromMs);
+    conditions.push(
+      `${sqlShiftedWarrantyDate()} IS NOT NULL AND ${sqlShiftedWarrantyDate()} >= ?`
+    );
+    args.push(filters.warrantyFrom);
   }
   if (filters.warrantyTo) {
-    const toEnd = new Date(filters.warrantyTo);
-    toEnd.setHours(23, 59, 59, 999);
-    conditions.push("td.warranty_start_ts IS NOT NULL AND td.warranty_start_ts <= ?");
-    args.push(toEnd.getTime());
+    conditions.push(
+      `${sqlShiftedWarrantyDate()} IS NOT NULL AND ${sqlShiftedWarrantyDate()} <= ?`
+    );
+    args.push(filters.warrantyTo);
   }
   if (filters.search && filters.search.trim()) {
     const term = `%${filters.search.trim()}%`;
@@ -106,9 +108,9 @@ export async function getTasks(filters: TaskListFilters = {}): Promise<TaskListR
         td.ref_task_numbers,
         td.customer_guid,
         td.warranty_id,
-        td.warranty_start_date,
+        ${sqlShiftedWarrantyDate()} as warranty_start_date,
         td.warranty_period,
-        td.days_to_repair
+        ${sqlDaysToRepairExpr()} as days_to_repair
       ${baseSql}
       ORDER BY t.timestamp DESC
       LIMIT ? OFFSET ?

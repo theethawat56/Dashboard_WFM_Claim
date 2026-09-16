@@ -2,6 +2,7 @@ import { getDb } from "../db";
 import { ensureNewColumns } from "../migrate";
 import { resolveFactorySkus, skuInSql } from "../factoryClaimSkus";
 import { SQL_NOT_VOIDED } from "../taskStatus";
+import { sqlDaysToRepairExpr } from "../warrantyBuffer";
 import type {
   FactoryClaimKpis,
   FactoryMatchRow,
@@ -37,16 +38,9 @@ function ymd(value?: string | null): string | undefined {
   return m ? m[1] : undefined;
 }
 
-/** Same as claim tracking: recompute from warranty start when present. */
+/** Same as claim tracking: recompute from the displayed (buffered) warranty start. */
 function daysToRepairExpr(): string {
-  return `CASE
-    WHEN td.warranty_start_date IS NOT NULL AND TRIM(td.warranty_start_date) != ''
-    THEN CAST(
-      julianday(date(datetime(t.timestamp / 1000, 'unixepoch', '+7 hours')))
-      - julianday(substr(td.warranty_start_date, 1, 10))
-    AS INTEGER)
-    ELSE td.days_to_repair
-  END`;
+  return sqlDaysToRepairExpr();
 }
 
 function inWarrantySql(): string {
@@ -244,15 +238,27 @@ export async function getFactoryPoSkuSummary(
 ): Promise<FactoryPoSkuRow[]> {
   await ensure();
   const db = getDb();
+  const year = bangkokYear();
   const { selected, from, to, dateField } = normalizeFilters(filters);
+  const hasDateRange = Boolean(from || to);
   const lSku = skuInSql("l.sku", selected);
   const matchWhere = [
     "m.match_tier != 'gray'",
     "m.po_id IS NOT NULL",
     SQL_NOT_VOIDED,
     inWarrantySql(),
+    "m.task_type = 'claim'",
   ];
   const matchArgs: (string | number)[] = [];
+  const damageYearExpr = `COALESCE(
+    strftime('%Y', datetime(t.timestamp / 1000, 'unixepoch', '+7 hours')),
+    substr(td.create_date, 1, 4),
+    substr(m.ref_date, 1, 4)
+  )`;
+  const damageSql = hasDateRange
+    ? "COALESCE(m.unit_cost, 0)"
+    : `CASE WHEN ${damageYearExpr} = ? THEN COALESCE(m.unit_cost, 0) ELSE 0 END`;
+  if (!hasDateRange) matchArgs.push(year);
   pushDateRange(matchWhere, matchArgs, matchDateColumn(dateField), from, to);
 
   const poWhere = [
@@ -286,11 +292,24 @@ export async function getFactoryPoSkuSummary(
         WHEN l.quantity > 0 THEN ROUND(COALESCE(m.matched_cases, 0) * 100.0 / l.quantity, 2)
         ELSE NULL
       END as claim_rate_pct,
-      COALESCE(m.matched_cases, 0) * COALESCE(l.unit_cost, 0) as damage_amount
-    FROM purchase_order_lines l
+      COALESCE(m.damage_amount, 0) as damage_amount
+    FROM (
+      SELECT l.po_id, l.sku,
+             MAX(l.product_name) as product_name,
+             SUM(l.quantity) as quantity,
+             CASE
+               WHEN SUM(l.quantity) > 0
+               THEN SUM(l.quantity * COALESCE(l.unit_cost, 0)) * 1.0 / SUM(l.quantity)
+               ELSE MAX(l.unit_cost)
+             END as unit_cost
+      FROM purchase_order_lines l
+      GROUP BY l.po_id, l.sku
+    ) l
     JOIN purchase_orders p ON p.id = l.po_id
     LEFT JOIN (
-      SELECT m.po_id, m.sku, COUNT(*) as matched_cases
+      SELECT m.po_id, m.sku,
+             COUNT(*) as matched_cases,
+             SUM(${damageSql}) as damage_amount
       ${matchFromSql()}
       WHERE ${matchWhere.join(" AND ")}
       GROUP BY m.po_id, m.sku

@@ -9,6 +9,7 @@ import {
   type CaseInput,
   type PoCandidate,
 } from "./poMatch";
+import { shiftWarrantyStartDate } from "../warrantyBuffer";
 
 const ZORT_URL =
   "https://open-api.zortout.com/v4/PurchaseOrder/GetPurchaseOrders";
@@ -293,7 +294,9 @@ export async function recomputePoMatches(): Promise<{ matched: number; gray: num
       taskNumber: String(row.task_number ?? ""),
       taskType: String(row.task_type ?? ""),
       sku: String(row.sku ?? ""),
-      warrantyStartDate: row.warranty_start_date != null ? String(row.warranty_start_date) : null,
+      warrantyStartDate: shiftWarrantyStartDate(
+        row.warranty_start_date != null ? String(row.warranty_start_date) : null
+      ),
       createDate: row.create_date != null ? String(row.create_date) : null,
     };
     if (!input.taskId) continue;

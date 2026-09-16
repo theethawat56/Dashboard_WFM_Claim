@@ -1,5 +1,6 @@
 import { getDb } from "../db";
 import { SQL_NOT_VOIDED } from "../taskStatus";
+import { sqlDaysToRepairExpr, sqlShiftedWarrantyDate } from "../warrantyBuffer";
 import type { EvidenceRow } from "@/types/dashboard";
 
 export async function getEvidenceBySku(
@@ -32,18 +33,16 @@ export async function getEvidenceBySku(
     args.push(toMs);
   }
   if (opts.warrantyFrom) {
-    const fromMs = new Date(opts.warrantyFrom).getTime();
     conditions.push(
-      "td.warranty_start_ts IS NOT NULL AND td.warranty_start_ts >= ?"
+      `${sqlShiftedWarrantyDate()} IS NOT NULL AND ${sqlShiftedWarrantyDate()} >= ?`
     );
-    args.push(fromMs);
+    args.push(opts.warrantyFrom);
   }
   if (opts.warrantyTo) {
-    const toMs = new Date(opts.warrantyTo + "T23:59:59.999").getTime();
     conditions.push(
-      "td.warranty_start_ts IS NOT NULL AND td.warranty_start_ts <= ?"
+      `${sqlShiftedWarrantyDate()} IS NOT NULL AND ${sqlShiftedWarrantyDate()} <= ?`
     );
-    args.push(toMs);
+    args.push(opts.warrantyTo);
   }
 
   const r = await db.execute({
@@ -66,9 +65,9 @@ export async function getEvidenceBySku(
         td.create_date,
         td.customer_guid,
         td.warranty_id,
-        td.warranty_start_date,
+        ${sqlShiftedWarrantyDate()} as warranty_start_date,
         td.warranty_period,
-        td.days_to_repair
+        ${sqlDaysToRepairExpr()} as days_to_repair
       FROM tasks t
       JOIN task_details td ON t.id = td.task_id
       WHERE ${conditions.join(" AND ")}
