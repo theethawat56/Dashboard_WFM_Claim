@@ -338,7 +338,7 @@ export async function getFactoryMatches(opts: {
   const offset = (page - 1) * limit;
   const { selected, from, to, dateField } = normalizeFilters(opts);
   const where: string[] = [SQL_NOT_VOIDED, inWarrantySql()];
-  const args: (string | number | null)[] = [];
+  const args: (string | number)[] = [];
   pushDateRange(where, args, matchDateColumn(dateField), from, to);
 
   const fromSql = `
