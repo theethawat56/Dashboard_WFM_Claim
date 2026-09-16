@@ -13,6 +13,7 @@ const INITIAL_BACKOFF_MS = 1000;
 const SKU_BATCH_SIZE = 50;
 const SKU_BATCH_DELAY_MS = 300;
 const HITS_PER_PAGE = 100;
+const REQUEST_TIMEOUT_MS = 45_000;
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -31,6 +32,7 @@ async function postWithRetry(
           Accept: "application/json",
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (res.ok) {
         return (await res.json()) as SearchResponse;
@@ -183,6 +185,7 @@ export async function fetchSkuBatch(
       const res = await fetch(url, {
         method: "GET",
         headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (!res.ok) {
         console.warn(
