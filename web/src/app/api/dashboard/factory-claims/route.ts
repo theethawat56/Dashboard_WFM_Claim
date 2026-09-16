@@ -5,25 +5,40 @@ import {
   getFactoryMatches,
   getFactoryPoHeaders,
   getFactoryPoSkuSummary,
+  type FactoryClaimFilters,
+  type FactoryDateField,
 } from "@/lib/queries/factoryClaims";
 import type { PoMatchTier } from "@/types/dashboard";
 
 export const dynamic = "force-dynamic";
 
+function parseDateField(raw: string | null): FactoryDateField {
+  return raw === "po" ? "po" : "repair";
+}
+
+function parseFilters(searchParams: URLSearchParams): FactoryClaimFilters {
+  return {
+    skus: parseSkusParam(searchParams.get("skus")),
+    from: searchParams.get("from") ?? undefined,
+    to: searchParams.get("to") ?? undefined,
+    dateField: parseDateField(searchParams.get("dateField")),
+  };
+}
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const { searchParams } = new URL(request.url);
     const view = searchParams.get("view") ?? "kpis";
-    const skus = parseSkusParam(searchParams.get("skus"));
+    const filters = parseFilters(searchParams);
 
     if (view === "kpis") {
-      return NextResponse.json(await getFactoryKpis(skus));
+      return NextResponse.json(await getFactoryKpis(filters));
     }
     if (view === "pos") {
-      return NextResponse.json(await getFactoryPoHeaders(skus));
+      return NextResponse.json(await getFactoryPoHeaders(filters));
     }
     if (view === "sku-summary") {
-      return NextResponse.json(await getFactoryPoSkuSummary(skus));
+      return NextResponse.json(await getFactoryPoSkuSummary(filters));
     }
     if (view === "matches") {
       const typeParam = searchParams.get("type");
@@ -38,11 +53,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           ? tierParam
           : "all";
       const result = await getFactoryMatches({
+        ...filters,
         search: searchParams.get("search") ?? undefined,
         type,
         tier,
         sku: searchParams.get("sku") ?? undefined,
-        skus,
         page: Number(searchParams.get("page")) || 1,
         limit: Number(searchParams.get("limit")) || 50,
       });

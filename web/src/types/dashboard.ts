@@ -199,6 +199,7 @@ export interface FactoryMatchRow {
   match_note: string;
   claims_on_this_po_sku: number | null;
   claim_rate_pct: number | null;
+  days_to_repair: number | null;
 }
 
 export interface FactoryPoHeaderRow {

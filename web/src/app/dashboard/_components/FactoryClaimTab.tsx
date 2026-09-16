@@ -54,11 +54,24 @@ export function FactoryClaimTab() {
   const [dialogSku, setDialogSku] = useState<string | null>(null);
   const [selectedSkus, setSelectedSkus] = useState<string[]>(() => [...FACTORY_CLAIM_SKUS]);
   const [nameBySku, setNameBySku] = useState<Record<string, string>>({});
+  const [dateField, setDateField] = useState<"repair" | "po">("repair");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const skusQuery = useMemo(() => selectedSkus.join(","), [selectedSkus]);
 
+  const filterQs = useMemo(() => {
+    const params = new URLSearchParams({
+      skus: skusQuery,
+      dateField,
+    });
+    if (dateFrom) params.set("from", dateFrom);
+    if (dateTo) params.set("to", dateTo);
+    return params.toString();
+  }, [skusQuery, dateField, dateFrom, dateTo]);
+
   const loadKpisAndSummary = useCallback(async () => {
-    const qs = `skus=${encodeURIComponent(skusQuery)}`;
+    const qs = filterQs;
     const [k, s, p] = await Promise.all([
       fetch(`/api/dashboard/factory-claims?view=kpis&${qs}`),
       fetch(`/api/dashboard/factory-claims?view=sku-summary&${qs}`),
@@ -79,24 +92,22 @@ export function FactoryClaimTab() {
     }
     if (p.ok) setPos(await p.json());
     setLoading(false);
-  }, [skusQuery]);
+  }, [filterQs]);
 
   const loadMatches = useCallback(async () => {
-    const params = new URLSearchParams({
-      view: "matches",
-      page: String(page),
-      limit: "50",
-      type,
-      tier,
-      skus: skusQuery,
-    });
+    const params = new URLSearchParams(filterQs);
+    params.set("view", "matches");
+    params.set("page", String(page));
+    params.set("limit", "50");
+    params.set("type", type);
+    params.set("tier", tier);
     if (search.trim()) params.set("search", search.trim());
     const res = await fetch(`/api/dashboard/factory-claims?${params}`);
     if (!res.ok) throw new Error("โหลดรายการจับคู่ไม่สำเร็จ");
     const json = await res.json();
     setMatches(json.rows ?? []);
     setMatchTotal(Number(json.total ?? 0));
-  }, [page, type, tier, search, skusQuery]);
+  }, [page, type, tier, search, filterQs]);
 
   useEffect(() => {
     loadKpisAndSummary().catch((e) => {
@@ -147,7 +158,7 @@ export function FactoryClaimTab() {
         <div>
           <h2 className="text-lg font-semibold text-slate-900">ยอดความเสียหายจากต้นทุน PO โรงงาน</h2>
           <p className="text-sm text-slate-500">
-            จับคู่งานซ่อม/เคลมกับ PO ต่างประเทศ · วันอ้างอิง = วันเริ่มประกัน ถ้าไม่มีใช้วันสร้างงาน
+            จับคู่งานซ่อม/เคลมกับ PO ต่างประเทศ · แสดงเฉพาะงานในประกัน (days_to_repair ไม่เกิน 365 วัน) · วันอ้างอิง = วันเริ่มประกัน ถ้าไม่มีใช้วันสร้างงาน
           </p>
         </div>
         <Button onClick={handleSync} disabled={syncing}>
@@ -170,11 +181,77 @@ export function FactoryClaimTab() {
         <Kpi
           title="ยอดเสียหาย (ต้นทุน PO)"
           value={kpis ? money(kpis.damage_total) : "—"}
-          hint={kpis ? `บาท · ปี ${kpis.damage_year} · ต่อเคส × ต้นทุนต่อหน่วย` : "บาท · เฉพาะปีปัจจุบัน"}
+          hint={kpis ? `บาท · ${kpis.damage_year} · ในประกัน · ต่อเคส × ต้นทุนต่อหน่วย` : "บาท · ในประกัน"}
         />
         <Kpi title="จับคู่ได้" value={kpis ? num(kpis.matched) : "—"} hint={kpis ? `เขียว ${kpis.green} · ส้ม ${kpis.orange} · เหลือง ${kpis.yellow}` : ""} />
         <Kpi title="ไม่พบ PO" value={kpis ? num(kpis.gray) : "—"} hint="ไม่มี SKU ใน PO ต่างประเทศ" />
         <Kpi title="PO ต่างประเทศ" value={kpis ? num(kpis.po_count) : "—"} hint={kpis?.last_synced_at ? `ซิงก์ล่าสุด ${kpis.last_synced_at}` : "ยังไม่ซิงก์"} />
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-3">
+        <div className="min-w-[160px]">
+          <label className="mb-1 block text-xs font-medium text-slate-600">กรองวันที่ตาม</label>
+          <select
+            value={dateField}
+            onChange={(e) => {
+              setDateField(e.target.value as "repair" | "po");
+              setPage(1);
+              setLoading(true);
+            }}
+            className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-sm"
+          >
+            <option value="repair">วันที่งานซ่อม</option>
+            <option value="po">วันที่ PO</option>
+          </select>
+        </div>
+        <div className="min-w-[140px]">
+          <label className="mb-1 block text-xs font-medium text-slate-600">จากวันที่</label>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => {
+              setDateFrom(e.target.value);
+              setPage(1);
+              setLoading(true);
+            }}
+            className="h-8 w-full rounded-md border border-slate-300 px-2 text-sm"
+          />
+        </div>
+        <div className="min-w-[140px]">
+          <label className="mb-1 block text-xs font-medium text-slate-600">ถึงวันที่</label>
+          <input
+            type="date"
+            value={dateTo}
+            min={dateFrom || undefined}
+            onChange={(e) => {
+              setDateTo(e.target.value);
+              setPage(1);
+              setLoading(true);
+            }}
+            className="h-8 w-full rounded-md border border-slate-300 px-2 text-sm"
+          />
+        </div>
+        {(dateFrom || dateTo) && (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-8"
+            onClick={() => {
+              setDateFrom("");
+              setDateTo("");
+              setPage(1);
+              setLoading(true);
+            }}
+          >
+            ล้างวันที่
+          </Button>
+        )}
+        <p className="text-xs text-slate-500">
+          {dateField === "po"
+            ? "กรองหัว PO และงานที่จับคู่ตามวันที่ใบสั่งซื้อ"
+            : "กรองงานที่จับคู่ตามวันที่สร้างงานซ่อม/เคลม"}
+          {" · "}ตัดงานนอกประกันและงานที่ไม่มี days_to_repair
+        </p>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -333,6 +410,7 @@ export function FactoryClaimTab() {
                     <th className="px-3 py-2 font-medium">งาน</th>
                     <th className="px-3 py-2 font-medium">สินค้า</th>
                     <th className="px-3 py-2 font-medium">วันอ้างอิง</th>
+                    <th className="px-3 py-2 font-medium text-right">วันในประกัน</th>
                     <th className="px-3 py-2 font-medium">ทียร์</th>
                     <th className="px-3 py-2 font-medium">PO</th>
                     <th className="px-3 py-2 font-medium">ซัพพลายเออร์</th>
@@ -355,6 +433,9 @@ export function FactoryClaimTab() {
                         <div className="text-slate-400">
                           {m.ref_date_source === "warranty_start_date" ? "วันเริ่มประกัน" : m.ref_date_source === "create_date" ? "วันสร้างงาน" : "ไม่มีวันที่"}
                         </div>
+                      </td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap text-xs">
+                        {m.days_to_repair != null ? `${num(m.days_to_repair)} วัน` : "—"}
                       </td>
                       <td className="px-3 py-2">
                         <span className={`inline-flex rounded-md border px-2 py-0.5 text-xs ${TIER_CLASS[m.match_tier]}`}>
@@ -465,6 +546,8 @@ export function FactoryClaimTab() {
               <li>ทียร์ 2 (ส้ม): ไม่มี PO ที่ผ่านเงื่อนไขก่อนวันอ้างอิง — ใช้ PO ใกล้สุดก่อนวันอ้างอิงจากทุกสถานะ (ไม่กระโดดไปข้างหน้า) ต้องตรวจกับจัดซื้อ</li>
               <li>ทียร์ 3 (เหลือง): ไม่มี PO ของ SKU นี้ก่อนวันอ้างอิงเลย — ใช้ใบแรกสุดเป็นประมาณการ</li>
               <li>เทา: ไม่มีซัพพลายเออร์ต่างประเทศของ SKU นี้ใน PO ที่ดึงมา</li>
+              <li>แสดงเฉพาะงานในประกัน: days_to_repair ไม่เกิน 365 วัน (คำนวณจากวันเริ่มประกันถึงวันสร้างงาน) งานนอกประกันและงานที่ไม่มีวันประกันถูกตัดออก</li>
+              <li>กรองวันที่ได้ตามวันที่งานซ่อม หรือวันที่ PO</li>
               <li>ตัด FOC เสมอ (คำว่า FOC ใน PO Number / Reference)</li>
               <li>PO_number ที่แสดง = คอลัมน์ Reference ถ้าว่างใช้ PO Number</li>
               <li>Claim Rate % = จำนวนงานที่จับคู่กับ (PO, SKU) / จำนวนในบรรทัด PO ของ SKU นั้น × 100</li>

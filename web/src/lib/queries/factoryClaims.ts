@@ -10,6 +10,17 @@ import type {
   PoMatchTier,
 } from "@/types/dashboard";
 
+const WARRANTY_DAYS = 365;
+
+export type FactoryDateField = "po" | "repair";
+
+export interface FactoryClaimFilters {
+  skus?: string[] | null;
+  from?: string;
+  to?: string;
+  dateField?: FactoryDateField;
+}
+
 async function ensure(): Promise<void> {
   await ensureNewColumns();
 }
@@ -21,28 +32,116 @@ function bangkokYear(): string {
   }).format(new Date());
 }
 
-export async function getFactoryKpis(skus?: string[] | null): Promise<FactoryClaimKpis> {
+function ymd(value?: string | null): string | undefined {
+  const m = (value ?? "").trim().match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : undefined;
+}
+
+/** Same as claim tracking: recompute from warranty start when present. */
+function daysToRepairExpr(): string {
+  return `CASE
+    WHEN td.warranty_start_date IS NOT NULL AND TRIM(td.warranty_start_date) != ''
+    THEN CAST(
+      julianday(date(datetime(t.timestamp / 1000, 'unixepoch', '+7 hours')))
+      - julianday(substr(td.warranty_start_date, 1, 10))
+    AS INTEGER)
+    ELSE td.days_to_repair
+  END`;
+}
+
+function inWarrantySql(): string {
+  const d = `(${daysToRepairExpr()})`;
+  return `${d} IS NOT NULL AND ${d} <= ${WARRANTY_DAYS}`;
+}
+
+function repairDateExpr(): string {
+  return `date(datetime(t.timestamp / 1000, 'unixepoch', '+7 hours'))`;
+}
+
+function poDateExpr(alias: "m" | "p"): string {
+  return `substr(${alias}.po_date, 1, 10)`;
+}
+
+function pushDateRange(
+  where: string[],
+  args: (string | number)[],
+  column: string,
+  from?: string,
+  to?: string
+): void {
+  if (from) {
+    where.push(`${column} >= ?`);
+    args.push(from);
+  }
+  if (to) {
+    where.push(`${column} <= ?`);
+    args.push(to);
+  }
+}
+
+function matchDateColumn(dateField: FactoryDateField): string {
+  return dateField === "po" ? poDateExpr("m") : repairDateExpr();
+}
+
+function normalizeFilters(filters: FactoryClaimFilters = {}): {
+  selected: string[];
+  from?: string;
+  to?: string;
+  dateField: FactoryDateField;
+} {
+  return {
+    selected: resolveFactorySkus(filters.skus),
+    from: ymd(filters.from),
+    to: ymd(filters.to),
+    dateField: filters.dateField === "po" ? "po" : "repair",
+  };
+}
+
+function matchFromSql(): string {
+  return `
+    FROM po_case_matches m
+    JOIN tasks t ON t.id = m.task_id
+    LEFT JOIN task_details td ON td.task_id = m.task_id
+  `;
+}
+
+export async function getFactoryKpis(
+  filters: FactoryClaimFilters = {}
+): Promise<FactoryClaimKpis> {
   await ensure();
   const db = getDb();
   const year = bangkokYear();
-  const selected = resolveFactorySkus(skus);
-  const skuFilter = skuInSql("sku", selected);
-  const mSkuFilter = skuInSql("m.sku", selected);
+  const { selected, from, to, dateField } = normalizeFilters(filters);
+  const skuFilter = skuInSql("m.sku", selected);
   const lSkuFilter = skuInSql("l.sku", selected);
+  const hasDateRange = Boolean(from || to);
+
+  const poWhere = ["p.is_foreign = 1", lSkuFilter.sql];
+  const poArgs: (string | number)[] = [...lSkuFilter.args];
+  if (dateField === "po") {
+    pushDateRange(poWhere, poArgs, poDateExpr("p"), from, to);
+  }
 
   const po = await db.execute({
     sql: `SELECT COUNT(DISTINCT p.id) as c
           FROM purchase_orders p
           JOIN purchase_order_lines l ON l.po_id = p.id
-          WHERE p.is_foreign = 1 AND ${lSkuFilter.sql}`,
-    args: lSkuFilter.args,
+          WHERE ${poWhere.join(" AND ")}`,
+    args: poArgs,
   });
   const lines = await db.execute({
     sql: `SELECT COUNT(*) as c FROM purchase_order_lines l
      JOIN purchase_orders p ON p.id = l.po_id
-     WHERE p.is_foreign = 1 AND ${lSkuFilter.sql}`,
-    args: lSkuFilter.args,
+     WHERE ${poWhere.join(" AND ")}`,
+    args: poArgs,
   });
+
+  const matchWhere = [SQL_NOT_VOIDED, skuFilter.sql, inWarrantySql()];
+  const matchArgs: (string | number)[] = [...skuFilter.args];
+  if (hasDateRange) {
+    pushDateRange(matchWhere, matchArgs, matchDateColumn(dateField), from, to);
+  }
+
   const tiers = await db.execute({
     sql: `
     SELECT
@@ -52,29 +151,31 @@ export async function getFactoryKpis(skus?: string[] | null): Promise<FactoryCla
       SUM(CASE WHEN match_tier = 'orange' THEN 1 ELSE 0 END) as orange,
       SUM(CASE WHEN match_tier = 'yellow' THEN 1 ELSE 0 END) as yellow,
       SUM(CASE WHEN match_tier = 'gray' THEN 1 ELSE 0 END) as gray
-      FROM po_case_matches m
-      JOIN tasks t ON t.id = m.task_id
-      WHERE ${SQL_NOT_VOIDED} AND ${skuFilter.sql}
+      ${matchFromSql()}
+      WHERE ${matchWhere.join(" AND ")}
   `,
-    args: skuFilter.args,
+    args: matchArgs,
   });
+
+  const damageWhere = [...matchWhere];
+  const damageArgs: (string | number)[] = [...matchArgs];
+  if (!hasDateRange) {
+    damageWhere.push(`COALESCE(
+      strftime('%Y', datetime(t.timestamp / 1000, 'unixepoch', '+7 hours')),
+      substr(td.create_date, 1, 4),
+      substr(m.ref_date, 1, 4)
+    ) = ?`);
+    damageArgs.push(year);
+  }
   const damage = await db.execute({
     sql: `
       SELECT COALESCE(SUM(
-        CASE WHEN m.match_tier != 'gray'
-          AND COALESCE(
-            strftime('%Y', datetime(t.timestamp / 1000, 'unixepoch', '+7 hours')),
-            substr(td.create_date, 1, 4),
-            substr(m.ref_date, 1, 4)
-          ) = ?
-        THEN COALESCE(m.unit_cost, 0) ELSE 0 END
+        CASE WHEN m.match_tier != 'gray' THEN COALESCE(m.unit_cost, 0) ELSE 0 END
       ), 0) as damage_total
-      FROM po_case_matches m
-      LEFT JOIN tasks t ON t.id = m.task_id
-      LEFT JOIN task_details td ON td.task_id = m.task_id
-      WHERE ${mSkuFilter.sql} AND ${SQL_NOT_VOIDED}
+      ${matchFromSql()}
+      WHERE ${damageWhere.join(" AND ")}
     `,
-    args: [year, ...mSkuFilter.args],
+    args: damageArgs,
   });
   const sync = await db.execute(
     `SELECT finished_at FROM sync_log WHERE sync_type = 'purchase_orders' ORDER BY id DESC LIMIT 1`
@@ -90,26 +191,35 @@ export async function getFactoryKpis(skus?: string[] | null): Promise<FactoryCla
     yellow: Number(t.yellow ?? 0),
     gray: Number(t.gray ?? 0),
     damage_total: Number((damage.rows[0] as { damage_total?: number })?.damage_total ?? 0),
-    damage_year: year,
+    damage_year: hasDateRange ? `${from ?? "…"}–${to ?? "…"}` : year,
     last_synced_at: ((sync.rows[0] as { finished_at?: string } | undefined)?.finished_at) ?? null,
   };
 }
 
-export async function getFactoryPoHeaders(skus?: string[] | null): Promise<FactoryPoHeaderRow[]> {
+export async function getFactoryPoHeaders(
+  filters: FactoryClaimFilters = {}
+): Promise<FactoryPoHeaderRow[]> {
   await ensure();
   const db = getDb();
-  const selected = resolveFactorySkus(skus);
+  const { selected, from, to, dateField } = normalizeFilters(filters);
   const lSku = skuInSql("l.sku", selected);
+  const where = [
+    "is_foreign = 1",
+    `id IN (SELECT l.po_id FROM purchase_order_lines l WHERE ${lSku.sql})`,
+  ];
+  const args: (string | number)[] = [...lSku.args];
+  if (dateField === "po") {
+    pushDateRange(where, args, poDateExpr("p"), from, to);
+  }
   const r = await db.execute({
     sql: `
     SELECT id, po_number, po_date, status, payment_status, supplier_name, supplier_code,
            reference, total_amount, total_quantity, payment_amount, currency, created_by, payment_term
-    FROM purchase_orders
-    WHERE is_foreign = 1
-      AND id IN (SELECT l.po_id FROM purchase_order_lines l WHERE ${lSku.sql})
+    FROM purchase_orders p
+    WHERE ${where.join(" AND ")}
     ORDER BY po_date DESC, id DESC
   `,
-    args: lSku.args,
+    args,
   });
   return (r.rows as Record<string, unknown>[]).map((row) => ({
     id: Number(row.id),
@@ -129,11 +239,33 @@ export async function getFactoryPoHeaders(skus?: string[] | null): Promise<Facto
   }));
 }
 
-export async function getFactoryPoSkuSummary(skus?: string[] | null): Promise<FactoryPoSkuRow[]> {
+export async function getFactoryPoSkuSummary(
+  filters: FactoryClaimFilters = {}
+): Promise<FactoryPoSkuRow[]> {
   await ensure();
   const db = getDb();
-  const selected = resolveFactorySkus(skus);
+  const { selected, from, to, dateField } = normalizeFilters(filters);
   const lSku = skuInSql("l.sku", selected);
+  const matchWhere = [
+    "m.match_tier != 'gray'",
+    "m.po_id IS NOT NULL",
+    SQL_NOT_VOIDED,
+    inWarrantySql(),
+  ];
+  const matchArgs: (string | number)[] = [];
+  pushDateRange(matchWhere, matchArgs, matchDateColumn(dateField), from, to);
+
+  const poWhere = [
+    "p.is_foreign = 1",
+    "p.is_foc = 0",
+    "l.sku IS NOT NULL AND TRIM(l.sku) != ''",
+    lSku.sql,
+  ];
+  const poArgs: (string | number)[] = [...matchArgs, ...lSku.args];
+  if (dateField === "po") {
+    pushDateRange(poWhere, poArgs, poDateExpr("p"), from, to);
+  }
+
   const r = await db.execute({
     sql: `
     SELECT
@@ -150,24 +282,23 @@ export async function getFactoryPoSkuSummary(skus?: string[] | null): Promise<Fa
       l.quantity,
       l.unit_cost,
       COALESCE(m.matched_cases, 0) as matched_cases,
-      m.claim_rate_pct,
+      CASE
+        WHEN l.quantity > 0 THEN ROUND(COALESCE(m.matched_cases, 0) * 100.0 / l.quantity, 2)
+        ELSE NULL
+      END as claim_rate_pct,
       COALESCE(m.matched_cases, 0) * COALESCE(l.unit_cost, 0) as damage_amount
     FROM purchase_order_lines l
     JOIN purchase_orders p ON p.id = l.po_id
     LEFT JOIN (
-      SELECT po_id, sku,
-             COUNT(*) as matched_cases,
-             MAX(claim_rate_pct) as claim_rate_pct
-      FROM po_case_matches
-      WHERE match_tier != 'gray' AND po_id IS NOT NULL
-      GROUP BY po_id, sku
+      SELECT m.po_id, m.sku, COUNT(*) as matched_cases
+      ${matchFromSql()}
+      WHERE ${matchWhere.join(" AND ")}
+      GROUP BY m.po_id, m.sku
     ) m ON m.po_id = l.po_id AND m.sku = l.sku
-    WHERE p.is_foreign = 1 AND p.is_foc = 0
-      AND l.sku IS NOT NULL AND TRIM(l.sku) != ''
-      AND ${lSku.sql}
+    WHERE ${poWhere.join(" AND ")}
     ORDER BY damage_amount DESC, p.po_date DESC
   `,
-    args: lSku.args,
+    args: poArgs,
   });
   return (r.rows as Record<string, unknown>[]).map((row) => ({
     po_id: Number(row.po_id),
@@ -194,6 +325,9 @@ export async function getFactoryMatches(opts: {
   tier?: PoMatchTier | "all";
   sku?: string;
   skus?: string[] | null;
+  from?: string;
+  to?: string;
+  dateField?: FactoryDateField;
   page?: number;
   limit?: number;
 }): Promise<{ rows: FactoryMatchRow[]; total: number; page: number; limit: number }> {
@@ -202,8 +336,10 @@ export async function getFactoryMatches(opts: {
   const page = Math.max(1, opts.page ?? 1);
   const limit = Math.min(200, Math.max(10, opts.limit ?? 50));
   const offset = (page - 1) * limit;
-  const where: string[] = [SQL_NOT_VOIDED];
+  const { selected, from, to, dateField } = normalizeFilters(opts);
+  const where: string[] = [SQL_NOT_VOIDED, inWarrantySql()];
   const args: (string | number | null)[] = [];
+  pushDateRange(where, args, matchDateColumn(dateField), from, to);
 
   const fromSql = `
     FROM po_case_matches m
@@ -216,6 +352,7 @@ export async function getFactoryMatches(opts: {
     LEFT JOIN task_details td ON td.task_id = m.task_id
   `;
   const productNameExpr = `COALESCE(NULLIF(TRIM(l.product_name), ''), NULLIF(TRIM(td.product_model), ''), m.sku)`;
+  const daysExpr = daysToRepairExpr();
 
   if (opts.type && opts.type !== "all") {
     where.push("m.task_type = ?");
@@ -225,7 +362,6 @@ export async function getFactoryMatches(opts: {
     where.push("m.match_tier = ?");
     args.push(opts.tier);
   }
-  const selected = resolveFactorySkus(opts.skus);
   const skuList = skuInSql("m.sku", selected);
   where.push(skuList.sql);
   args.push(...skuList.args);
@@ -249,7 +385,7 @@ export async function getFactoryMatches(opts: {
   const total = Number((count.rows[0] as { c?: number })?.c ?? 0);
 
   const r = await db.execute({
-    sql: `SELECT m.*, ${productNameExpr} as product_name
+    sql: `SELECT m.*, ${productNameExpr} as product_name, ${daysExpr} as days_to_repair
           ${fromSql}
           WHERE ${whereSql}
           ORDER BY CASE m.match_tier
@@ -279,6 +415,7 @@ export async function getFactoryMatches(opts: {
     match_note: String(row.match_note ?? ""),
     claims_on_this_po_sku: row.claims_on_this_po_sku != null ? Number(row.claims_on_this_po_sku) : null,
     claim_rate_pct: row.claim_rate_pct != null ? Number(row.claim_rate_pct) : null,
+    days_to_repair: row.days_to_repair != null ? Number(row.days_to_repair) : null,
   }));
 
   return { rows, total, page, limit };
