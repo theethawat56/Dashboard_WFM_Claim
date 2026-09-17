@@ -36,6 +36,10 @@ async function ensureTables() {
   tablesEnsured = true;
 }
 
+export async function ensureClaimCompTables(): Promise<void> {
+  await ensureTables();
+}
+
 // ── Insert a batch (1 compensation entry + N linked tasks) ──────────
 
 export async function insertBatch(data: {

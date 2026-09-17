@@ -157,6 +157,10 @@ export interface FactoryClaimKpis {
   yellow: number;
   gray: number;
   damage_total: number;
+  recovered_total: number;
+  recovered_pct: number | null;
+  result_total: number;
+  remaining_total: number;
   damage_year: string;
   last_synced_at: string | null;
 }

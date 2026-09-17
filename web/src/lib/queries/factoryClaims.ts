@@ -1,6 +1,7 @@
 import { getDb } from "../db";
 import { ensureNewColumns } from "../migrate";
 import { resolveFactorySkus, skuInSql } from "../factoryClaimSkus";
+import { ensureClaimCompTables } from "./claimCompensations";
 import { SQL_NOT_VOIDED } from "../taskStatus";
 import { sqlDaysToRepairExpr } from "../warrantyBuffer";
 import type {
@@ -103,6 +104,7 @@ export async function getFactoryKpis(
   filters: FactoryClaimFilters = {}
 ): Promise<FactoryClaimKpis> {
   await ensure();
+  await ensureClaimCompTables();
   const db = getDb();
   const year = bangkokYear();
   const { selected, from, to, dateField } = normalizeFilters(filters);
@@ -171,10 +173,36 @@ export async function getFactoryKpis(
     `,
     args: damageArgs,
   });
+  const recovered = await db.execute({
+    sql: `
+      SELECT COALESCE(SUM(b.amount), 0) as recovered_total
+      FROM claim_comp_batches b
+      WHERE b.id IN (
+        SELECT DISTINCT bt.batch_id
+        FROM claim_comp_batch_tasks bt
+        JOIN po_case_matches m ON m.task_id = bt.task_id
+        JOIN tasks t ON t.id = m.task_id
+        LEFT JOIN task_details td ON td.task_id = m.task_id
+        WHERE ${damageWhere.join(" AND ")}
+          AND m.match_tier != 'gray'
+      )
+    `,
+    args: damageArgs,
+  });
   const sync = await db.execute(
     `SELECT finished_at FROM sync_log WHERE sync_type = 'purchase_orders' ORDER BY id DESC LIMIT 1`
   );
   const t = (tiers.rows[0] ?? {}) as Record<string, unknown>;
+  const damageTotal = Number((damage.rows[0] as { damage_total?: number })?.damage_total ?? 0);
+  const recoveredTotal = Number(
+    (recovered.rows[0] as { recovered_total?: number })?.recovered_total ?? 0
+  );
+  const resultRes = await db.execute(
+    `SELECT COALESCE(SUM(amount), 0) as result_total FROM claim_comp_batches`
+  );
+  const resultTotal = Number(
+    (resultRes.rows[0] as { result_total?: number })?.result_total ?? 0
+  );
   return {
     po_count: Number((po.rows[0] as { c?: number })?.c ?? 0),
     line_count: Number((lines.rows[0] as { c?: number })?.c ?? 0),
@@ -184,7 +212,11 @@ export async function getFactoryKpis(
     orange: Number(t.orange ?? 0),
     yellow: Number(t.yellow ?? 0),
     gray: Number(t.gray ?? 0),
-    damage_total: Number((damage.rows[0] as { damage_total?: number })?.damage_total ?? 0),
+    damage_total: damageTotal,
+    recovered_total: recoveredTotal,
+    recovered_pct: damageTotal > 0 ? (recoveredTotal * 100) / damageTotal : null,
+    result_total: resultTotal,
+    remaining_total: damageTotal - resultTotal,
     damage_year: hasDateRange ? `${from ?? "…"}–${to ?? "…"}` : year,
     last_synced_at: ((sync.rows[0] as { finished_at?: string } | undefined)?.finished_at) ?? null,
   };
