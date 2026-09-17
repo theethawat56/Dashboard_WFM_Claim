@@ -177,22 +177,11 @@ export function FactoryClaimTab() {
         </div>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
           title="ยอดเสียหาย (ต้นทุน PO)"
           value={kpis ? money(kpis.damage_total) : "—"}
           hint={kpis ? `บาท · ${kpis.damage_year} · ในประกัน · เฉพาะ CLM × ต้นทุนต่อหน่วย` : "บาท · ในประกัน · เฉพาะ CLM"}
-        />
-        <Kpi
-          title="ความคืน (ตามได้แล้ว)"
-          value={kpis ? money(kpis.recovered_total) : "—"}
-          hint={
-            kpis
-              ? kpis.recovered_pct != null
-                ? `บาท · คืน ${kpis.recovered_pct.toLocaleString("th-TH", { maximumFractionDigits: 1 })}% ของยอดเสียหาย · กรองตามหน้านี้`
-                : "บาท · กรองตามหน้านี้"
-              : "บาท · กรองตามหน้านี้"
-          }
         />
         <Kpi
           title="ยอดเคลมรวม (ผลเคลม)"
@@ -576,8 +565,7 @@ export function FactoryClaimTab() {
               <li>PO_number ที่แสดง = คอลัมน์ Reference ถ้าว่างใช้ PO Number</li>
               <li>Claim Rate % = จำนวนงาน CLM ในประกันที่จับคู่กับ (PO, SKU) / จำนวนในบรรทัด PO ของ SKU นั้น × 100 ไม่รวมงานซ่อม MNT</li>
               <li>ยอดเสียหายในตารางสรุป นับเหมือน KPI ยอดเสียหาย (ต้นทุน PO): เฉพาะงาน CLM ในประกันที่จับคู่ได้ × ต้นทุนต่อหน่วย ไม่รวม MNT และถ้าไม่กรองช่วงวันที่จะนับเฉพาะปีปัจจุบัน</li>
-              <li>ความคืน (ตามได้แล้ว) = ยอดจากปุ่มบันทึกเคลมโรงงาน (คืนเงิน/อะไหล่/deduce/สินค้าทดแทน) ที่ผูกกับงาน CLM ในประกันที่จับคู่ได้ ใช้ตัวกรอง SKU/วันที่เดียวกับยอดเสียหาย นับแต่ละรายการบันทึกครั้งเดียว % = ยอดตามได้ / ยอดเสียหาย</li>
-              <li>ยอดเคลมรวม (ผลเคลม) = ตัวเลขเดียวกับช่องยอดเคลมรวมในหน้าผลเคลม (รวมทุกบันทึก ไม่กรองปี/ในประกัน) ยอดคงเหลือ = ยอดเสียหาย − ยอดเคลมรวมนี้ ไม่หักความคืนซ้ำเพราะมาจากบันทึกชุดเดียวกัน</li>
+              <li>ยอดเคลมรวม (ผลเคลม) = ตัวเลขเดียวกับช่องยอดเคลมรวมในหน้าผลเคลม (รวมทุกบันทึก ไม่กรองปี/ในประกัน) ยอดคงเหลือ = ยอดเสียหาย − ยอดเคลมรวมนี้</li>
               <li>Payment Term ไม่มีใน API Zort จึงเว้นว่าง</li>
               <li>ดึงเฉพาะซัพพลายเออร์ต่างประเทศที่เป็น Co./Ltd/Limited/PTE/Corporation ตัด FOC, Test Supplier, Harvey, ชื่อว่าง</li>
             </ul>
