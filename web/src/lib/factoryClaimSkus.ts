@@ -1,6 +1,7 @@
 /** Allowlisted SKUs for factory-claim and claim-tracking tabs (first-seen order, unique). */
 export const FACTORY_CLAIM_SKUS: string[] = [
   "ATB092116",
+  "ATB92116",
   "ATB092105",
   "ATB092115",
   "ATB092123",
