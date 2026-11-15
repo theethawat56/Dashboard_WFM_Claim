@@ -3,6 +3,7 @@ import { CaseBoard } from "@/components/CaseBoard";
 import { listFactoryClaimRates } from "@/lib/claimRates";
 import { listFactoryCases } from "@/lib/cases";
 import { factoryByToken } from "@/lib/factories";
+import { filesForTasks } from "@/lib/media";
 import { translateMany } from "@/lib/translate";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,12 @@ export default async function FactoryPage({ params }: { params: Promise<{ token:
 
   const [cases, rates] = await Promise.all([listFactoryCases(factory.id), listFactoryClaimRates(factory.id)]);
   const english = await translateMany(cases.map((row) => row.symptomOriginal));
+  let mediaUnavailable = false;
+  const media = await filesForTasks(cases.map((row) => row.taskNumber)).catch((error: unknown) => {
+    console.error("[factory media list]", error);
+    mediaUnavailable = true;
+    return new Map<string, { kind: "video" | "image"; label: string }[]>();
+  });
 
   return (
     <CaseBoard
@@ -34,7 +41,9 @@ export default async function FactoryPage({ params }: { params: Promise<{ token:
         amount: row.amount,
         note: row.note,
         reason: row.reason,
+        files: (media.get(row.taskNumber) ?? []).map(({ kind, label }) => ({ kind, label })),
       }))}
+      mediaUnavailable={mediaUnavailable}
     />
   );
 }

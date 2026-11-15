@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { CaseMedia, type CaseMediaFile } from "@/components/CaseMedia";
 import { ClaimRates } from "@/components/ClaimRates";
 import type { FactoryClaimRates } from "@/lib/claimRates";
 import { COMP_TYPES, type CaseStatus, type CompType } from "@/lib/compensation";
@@ -20,6 +21,7 @@ export type BoardCase = {
   amount: number | null;
   note: string | null;
   reason: string | null;
+  files: CaseMediaFile[];
 };
 
 const STATUS_LABEL: Record<CaseStatus, string> = {
@@ -46,11 +48,13 @@ export function CaseBoard({
   factoryName,
   cases,
   rates,
+  mediaUnavailable,
 }: {
   token: string;
   factoryName: string;
   cases: BoardCase[];
   rates: FactoryClaimRates;
+  mediaUnavailable: boolean;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(cases);
@@ -183,7 +187,8 @@ export function CaseBoard({
           <h1 className="mt-1 text-2xl font-semibold text-slate-950">{factoryName}</h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-600">
             These are this year&apos;s cases that are still inside the 365-day warranty, have a serial number and a defect
-            description, and have not been recorded as compensated. Amounts are in Thai baht.
+            description, and have not been recorded as compensated. Amounts are in Thai baht. Videos and
+            photos from this case are listed on the case.
           </p>
         </div>
         <a
@@ -240,6 +245,7 @@ export function CaseBoard({
               <span className="font-medium">Defect: </span>
               {row.symptom || "—"}
             </p>
+            <CaseMedia token={token} taskId={row.id} files={row.files} unavailable={mediaUnavailable} />
 
             {(row.status === "proposed" || row.status === "confirmed") && (
               <p className="mt-3 text-sm text-slate-700">
