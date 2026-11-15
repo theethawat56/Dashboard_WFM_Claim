@@ -1,7 +1,14 @@
 "use client";
 
 import type { DailyTopSkuRow } from "@/types/dashboard";
+import { lookbackRange } from "@/lib/bangkokDate";
 import { formatThaiNumber } from "@/lib/utils";
+
+function formatDmy(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  if (!y || !m || !d) return iso;
+  return `${d}/${m}/${y}`;
+}
 
 const MEDAL = ["🥇", "🥈", "🥉", "4", "5"];
 
@@ -20,21 +27,26 @@ export function DailyTopSkusCard({
   date: string;
   onDateChange: (d: string) => void;
 }) {
+  const { from, to } = lookbackRange(date, 7);
+
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-3">
-        <label className="text-xs font-medium text-slate-600">วันที่:</label>
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="text-xs font-medium text-slate-600">ถึงวันที่:</label>
         <input
           type="date"
           value={date}
           onChange={(e) => onDateChange(e.target.value)}
           className="h-8 rounded-md border border-slate-300 px-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
+        <span className="text-xs text-slate-500">
+          ช่วง {formatDmy(from)} – {formatDmy(to)}
+        </span>
       </div>
 
       {data.length === 0 ? (
         <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-500">
-          ไม่มีข้อมูลงานในวันที่เลือก
+          ไม่มีข้อมูลงานในช่วง 7 วันนี้
         </div>
       ) : (
         <div className="space-y-2">

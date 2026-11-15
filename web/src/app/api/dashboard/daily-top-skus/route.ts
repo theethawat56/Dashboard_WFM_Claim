@@ -8,7 +8,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get("date") ?? undefined;
     const limit = Math.min(Number(searchParams.get("limit") ?? 5), 20);
-    const rows = await getDailyTopSkus(date, limit);
+    const days = Math.min(Math.max(Number(searchParams.get("days") ?? 7), 1), 90);
+    const rows = await getDailyTopSkus(date, limit, days);
     return NextResponse.json(rows);
   } catch (e) {
     console.error("[dashboard/daily-top-skus]", e);

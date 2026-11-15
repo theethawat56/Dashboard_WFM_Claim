@@ -10,8 +10,14 @@ web/.env.local
 # Build & Next.js
 web/.next/
 web/out/
+factory-portal/.next/
+factory-portal/out/
+factory-portal/.open-next/
+factory-portal/.wrangler/
+factory-portal/.dev.vars
 
 # Debug & misc
+.vercel/
 .DS_Store
 *.log
 npm-debug.log*

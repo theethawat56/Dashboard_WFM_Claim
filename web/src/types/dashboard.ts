@@ -54,6 +54,7 @@ export interface TaskListRow {
   warranty_start_date: string | null;
   warranty_period: string | null;
   days_to_repair: number | null;
+  factory_sent: boolean;
 }
 
 export interface EvidenceRow {
@@ -265,4 +266,57 @@ export interface ClaimTrackingData {
   kpis: ClaimTrackingKpis;
   rows: ClaimTrackingRow[];
   months: string[];
+}
+
+export interface FactoryClaimQueueRow {
+  id: string;
+  task_number: string;
+  task_type: "repair" | "claim";
+  sku: string | null;
+  product_name: string | null;
+  product_serial: string | null;
+  issue: string | null;
+  create_date: string | null;
+  days_from_register: number | null;
+  is_closed: boolean;
+  missing_serial: boolean;
+  missing_symptom: boolean;
+  ready: boolean;
+}
+
+export interface FactoryClaimQueueData {
+  pending_count: number;
+  claimed_count: number;
+  ready_count: number;
+  blocked_count: number;
+  rows: FactoryClaimQueueRow[];
+  shown: number;
+}
+
+export interface ClaimedModelRow {
+  model: string;
+  jobs: number;
+  last_claimed_at: string;
+}
+
+export type FactorySendStatus = "not_sent" | "waiting" | "compensated" | "mixed";
+
+export interface ModelFactoryStatusRow {
+  model: string;
+  units: number;
+  not_sent: number;
+  sent_waiting: number;
+  compensated: number;
+  status: FactorySendStatus;
+}
+
+export interface ModelFactoryStatusData {
+  year: number;
+  from: string;
+  to: string;
+  units: number;
+  not_sent: number;
+  sent_waiting: number;
+  compensated: number;
+  rows: ModelFactoryStatusRow[];
 }

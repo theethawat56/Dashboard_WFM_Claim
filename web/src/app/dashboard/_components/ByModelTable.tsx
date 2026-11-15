@@ -23,6 +23,24 @@ export interface CompSummaryBySku {
   compensated_tasks: number;
 }
 
+type DialogMode = "excel" | "video";
+
+type ZipPartLink = {
+  id: number;
+  kind: "zip" | "file";
+  fileCount: number;
+  bytes: number;
+  name: string;
+  href: string;
+};
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "ไม่ทราบขนาด";
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 10) return `${formatThaiNumber(Math.round(mb))} MB`;
+  return `${mb.toFixed(1)} MB`;
+}
+
 export function ByModelTable({
   rows,
   onExportExcel,
@@ -33,23 +51,122 @@ export function ByModelTable({
   compBySku?: Record<string, CompSummaryBySku>;
 }) {
   const [dialogSku, setDialogSku] = useState<string | null>(null);
+  const [dialogMode, setDialogMode] = useState<DialogMode>("excel");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [videoBusy, setVideoBusy] = useState<"xlsx" | "count" | null>(null);
+  const [videoError, setVideoError] = useState("");
+  const [zipReady, setZipReady] = useState<{
+    fileCount: number;
+    taskCount: number;
+    parts: ZipPartLink[];
+  } | null>(null);
 
-  function openDialog(sku: string) {
+  function openDialog(sku: string, mode: DialogMode) {
     setDialogSku(sku);
+    setDialogMode(mode);
     setDateFrom("");
     setDateTo("");
+    setVideoError("");
+    setZipReady(null);
+    setVideoBusy(null);
   }
 
   function closeDialog() {
     setDialogSku(null);
+    setVideoBusy(null);
+  }
+
+  function mediaParams(format: "xlsx" | "zip" | "count" | "plan", part?: number, planId?: string) {
+    const params = new URLSearchParams({ sku: dialogSku ?? "", format });
+    if (part != null) params.set("part", String(part));
+    if (planId) params.set("planId", planId);
+    if (dateFrom) params.set("dateFrom", dateFrom);
+    if (dateTo) params.set("dateTo", dateTo);
+    return params;
   }
 
   function handleConfirmExport() {
     if (!dialogSku) return;
     onExportExcel(dialogSku, dateFrom || undefined, dateTo || undefined);
     closeDialog();
+  }
+
+  async function downloadVideoExcel() {
+    if (!dialogSku) return;
+    setVideoBusy("xlsx");
+    setVideoError("");
+    try {
+      const res = await fetch(`/api/export/media?${mediaParams("xlsx")}`);
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        setVideoError(data?.error || "Export ไม่สำเร็จ");
+        return;
+      }
+      const blob = await res.blob();
+      const header = res.headers.get("Content-Disposition") ?? "";
+      const encoded = /filename\*=UTF-8''([^;]+)/.exec(header)?.[1];
+      const plain = /filename="([^"]+)"/.exec(header)?.[1];
+      const filename = encoded ? decodeURIComponent(encoded) : plain || "videos.xlsx";
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+      closeDialog();
+    } catch {
+      setVideoError("Export ไม่สำเร็จ");
+    } finally {
+      setVideoBusy(null);
+    }
+  }
+
+  async function prepareZip() {
+    if (!dialogSku) return;
+    setVideoBusy("count");
+    setVideoError("");
+    setZipReady(null);
+    try {
+      const res = await fetch(`/api/export/media?${mediaParams("plan")}`);
+      const data = (await res.json().catch(() => null)) as {
+        error?: string;
+        planId?: string;
+        fileCount?: number;
+        taskCount?: number;
+        parts?: Array<{
+          id: number;
+          kind: "zip" | "file";
+          fileCount: number;
+          bytes: number;
+          name: string;
+          objectKey?: string;
+        }>;
+      } | null;
+      if (!res.ok || !data?.fileCount || !data.parts?.length) {
+        setVideoError(data?.error || "ไม่พบไฟล์ให้ดาวน์โหลด");
+        return;
+      }
+      setZipReady({
+        fileCount: data.fileCount,
+        taskCount: data.taskCount ?? 0,
+        parts: data.parts.map((part) => ({
+          id: part.id,
+          kind: part.kind,
+          fileCount: part.fileCount,
+          bytes: part.bytes,
+          name: part.name,
+          href:
+            part.kind === "file"
+              ? `/api/export/media/file?objectKey=${encodeURIComponent(part.objectKey ?? "")}`
+              : `/api/export/media?${mediaParams("zip", part.id, data.planId)}`,
+        })),
+      });
+    } catch {
+      setVideoError("ตรวจสอบไฟล์ไม่สำเร็จ");
+    } finally {
+      setVideoBusy(null);
+    }
   }
 
   if (rows.length === 0) {
@@ -149,13 +266,22 @@ export function ByModelTable({
                   )}
                 </td>
                 <td className="px-4 py-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => openDialog(r.sku)}
-                  >
-                    Export Excel
-                  </Button>
+                  <div className="flex flex-col gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openDialog(r.sku, "excel")}
+                    >
+                      Export Excel
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openDialog(r.sku, "video")}
+                    >
+                      Export วิดีโอ
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -166,16 +292,18 @@ export function ByModelTable({
       {/* Export date-range dialog */}
       {dialogSku && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
+          <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
             <h3 className="mb-1 text-base font-semibold text-slate-800">
-              Export Excel
+              {dialogMode === "video" ? "Export วิดีโอและรูป" : "Export Excel"}
             </h3>
             <p className="mb-4 text-sm text-slate-500">
               SKU: <span className="font-mono font-medium text-slate-700">{dialogSku}</span>
             </p>
 
             <p className="mb-3 text-sm text-slate-600">
-              เลือกช่วงเวลาที่ต้องการ Export (ไม่บังคับ — ถ้าไม่เลือกจะ Export ทั้งหมด)
+              {dialogMode === "video"
+                ? "รวมวิดีโอทดสอบ วิดีโอจากช่าง และรูป ของทุกงานใน SKU นี้ ทั้งเลข MNT และ CLM เลือกช่วงเวลาได้ (ไม่บังคับ)"
+                : "เลือกช่วงเวลาที่ต้องการ Export (ไม่บังคับ — ถ้าไม่เลือกจะ Export ทั้งหมด)"}
             </p>
 
             <div className="space-y-3">
@@ -186,7 +314,10 @@ export function ByModelTable({
                 <input
                   type="date"
                   value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
+                  onChange={(e) => {
+                    setDateFrom(e.target.value);
+                    setZipReady(null);
+                  }}
                   className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -197,7 +328,10 @@ export function ByModelTable({
                 <input
                   type="date"
                   value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
+                  onChange={(e) => {
+                    setDateTo(e.target.value);
+                    setZipReady(null);
+                  }}
                   min={dateFrom || undefined}
                   className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -220,13 +354,57 @@ export function ByModelTable({
               </p>
             )}
 
-            <div className="mt-5 flex justify-end gap-2">
-              <Button size="sm" variant="outline" onClick={closeDialog}>
+            {videoError && (
+              <p className="mt-3 text-sm text-red-600">{videoError}</p>
+            )}
+            {zipReady && dialogMode === "video" && (
+              <div className="mt-3 space-y-2 text-sm text-slate-600">
+                <p>
+                  พบ {formatThaiNumber(zipReady.fileCount)} ไฟล์ จาก {formatThaiNumber(zipReady.taskCount)} งาน
+                  แยกเป็น {formatThaiNumber(zipReady.parts.length)} ส่วน แต่ละ ZIP ไม่เกิน 800 MB ไฟล์ที่ใหญ่กว่านั้นดาวน์โหลดแยกทั้งก้อน
+                </p>
+                <ul className="max-h-48 space-y-2 overflow-y-auto">
+                  {zipReady.parts.map((part) => (
+                    <li key={`${part.kind}-${part.id}`} className="flex items-center justify-between gap-3">
+                      <span>
+                        {part.kind === "zip"
+                          ? `ZIP ส่วนที่ ${formatThaiNumber(part.id)} · ${formatThaiNumber(part.fileCount)} ไฟล์`
+                          : part.name}
+                        {" · "}
+                        {formatBytes(part.bytes)}
+                      </span>
+                      <a
+                        href={part.href}
+                        className="inline-flex h-8 shrink-0 items-center rounded-md bg-[#1565C0] px-3 text-sm font-medium text-white hover:bg-[#0D47A1]"
+                      >
+                        ดาวน์โหลด
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={closeDialog} disabled={videoBusy != null}>
                 ยกเลิก
               </Button>
-              <Button size="sm" onClick={handleConfirmExport}>
-                Export
-              </Button>
+              {dialogMode === "excel" ? (
+                <Button size="sm" onClick={handleConfirmExport}>
+                  Export
+                </Button>
+              ) : (
+                <>
+                  <Button size="sm" variant="outline" onClick={downloadVideoExcel} disabled={videoBusy != null}>
+                    {videoBusy === "xlsx" ? "กำลังสร้าง Excel..." : "Excel ลิงก์"}
+                  </Button>
+                  {!zipReady && (
+                    <Button size="sm" onClick={prepareZip} disabled={videoBusy != null}>
+                      {videoBusy === "count" ? "กำลังวัดขนาดไฟล์..." : "เตรียม ZIP"}
+                    </Button>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>

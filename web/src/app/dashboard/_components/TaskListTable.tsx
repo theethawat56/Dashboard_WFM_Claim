@@ -23,6 +23,7 @@ export interface TaskRow {
   warranty_start_date?: string | null;
   warranty_period?: string | null;
   days_to_repair?: number | null;
+  factory_sent?: boolean;
 }
 
 export function TaskListTable({
@@ -33,6 +34,7 @@ export function TaskListTable({
   onPageChange,
   claimedSelected,
   onToggleClaimed,
+  onToggleFactorySent,
   compensationMap,
   onOpenCompensation,
 }: {
@@ -43,6 +45,7 @@ export function TaskListTable({
   onPageChange: (p: number) => void;
   claimedSelected: Set<string>;
   onToggleClaimed: (row: TaskRow) => void;
+  onToggleFactorySent: (row: TaskRow) => void;
   compensationMap?: Record<string, number>;
   onOpenCompensation?: (row: TaskRow) => void;
 }) {
@@ -87,6 +90,8 @@ export function TaskListTable({
             {rows.map((r) => {
               const compAmt = compensationMap?.[r.task_number];
               const hasComp = compAmt != null && compAmt > 0;
+              const compensated = compAmt != null;
+              const sentWaiting = !compensated && r.factory_sent === true;
 
               return (
                 <tr
@@ -108,6 +113,26 @@ export function TaskListTable({
                         title="คลิกเพื่อเลือก/ยกเลิก Claimed"
                       >
                         Claimed
+                      </button>
+                      <button
+                        type="button"
+                        disabled={compensated}
+                        onClick={() => onToggleFactorySent(r)}
+                        className={[
+                          "inline-flex h-7 items-center justify-center rounded-md border px-2 text-xs font-medium",
+                          compensated
+                            ? "cursor-default border-green-300 bg-green-50 text-green-800"
+                            : sentWaiting
+                              ? "border-amber-600 bg-amber-500 text-white hover:bg-amber-600"
+                              : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
+                        ].join(" ")}
+                        title={
+                          compensated
+                            ? "บันทึกผลเคลมแล้ว ถือว่าได้รับชดเชย"
+                            : "คลิกเพื่อระบุว่าส่งเรื่องให้โรงงานแล้ว แต่ยังไม่ได้ชดเชย"
+                        }
+                      >
+                        {compensated ? "ได้ชดเชย" : sentWaiting ? "ส่งแล้ว" : "ส่งโรงงาน"}
                       </button>
                     </div>
                   </td>

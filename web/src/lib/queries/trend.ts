@@ -1,5 +1,6 @@
 import { getDb } from "../db";
 import { SQL_NOT_VOIDED } from "../taskStatus";
+import { bangkokDate, lookbackRange } from "../bangkokDate";
 import type { MonthlyTrendRow, DailyTrendRow, DailyTopSkuRow } from "@/types/dashboard";
 
 const EIGHTEEN_MONTHS_MS = 18 * 30 * 24 * 60 * 60 * 1000;
@@ -60,15 +61,17 @@ export async function getDailyTrend(days: number = 30): Promise<DailyTrendRow[]>
   }));
 }
 
-function toThaiDateString(d: Date = new Date()): string {
-  return d.toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
-}
-
-export async function getDailyTopSkus(date?: string, limit: number = 5): Promise<DailyTopSkuRow[]> {
+export async function getDailyTopSkus(
+  date?: string,
+  limit: number = 5,
+  days: number = 7
+): Promise<DailyTopSkuRow[]> {
   const db = getDb();
-  const targetDate = date ?? toThaiDateString();
-  // Convert YYYY-MM-DD (Thai timezone) to UTC ms range
-  const dayStartLocal = new Date(targetDate + "T00:00:00+07:00").getTime();
+  const targetDate = date ?? bangkokDate();
+  const span = Math.min(Math.max(days, 1), 90);
+  const { from } = lookbackRange(targetDate, span);
+  // Inclusive Bangkok calendar window, converted to UTC ms
+  const dayStartLocal = new Date(from + "T00:00:00+07:00").getTime();
   const dayEndLocal = new Date(targetDate + "T23:59:59.999+07:00").getTime();
 
   const r = await db.execute({

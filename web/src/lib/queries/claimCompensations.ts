@@ -5,6 +5,7 @@ import type {
   ClaimCompBatch,
   ClaimCompSkuRow,
   ClaimCompOverall,
+  ClaimedModelRow,
   CompType,
   SkuTaskForBatch,
 } from "@/types/dashboard";
@@ -296,5 +297,27 @@ export async function getTasksForSku(sku: string): Promise<SkuTaskForBatch[]> {
     timestamp: row.timestamp != null ? Number(row.timestamp) : null,
     is_reclaim: Number(row.is_reclaim ?? 0),
     already_compensated: compSet.has(String(row.task_number ?? "")),
+  }));
+}
+
+/** Models already recorded in a factory compensation batch, newest claim first. */
+export async function getClaimedModels(): Promise<ClaimedModelRow[]> {
+  await ensureTables();
+  const db = getDb();
+  const r = await db.execute(`
+    SELECT
+      COALESCE(NULLIF(TRIM(td.product_model), ''), b.sku) AS model,
+      COUNT(DISTINCT bt.task_number) AS jobs,
+      MAX(b.created_at) AS last_claimed_at
+    FROM claim_comp_batches b
+    JOIN claim_comp_batch_tasks bt ON bt.batch_id = b.id
+    LEFT JOIN task_details td ON td.task_id = bt.task_id
+    GROUP BY model
+    ORDER BY last_claimed_at DESC
+  `);
+  return r.rows.map((row: Record<string, unknown>) => ({
+    model: String(row.model ?? ""),
+    jobs: Number(row.jobs ?? 0),
+    last_claimed_at: String(row.last_claimed_at ?? ""),
   }));
 }

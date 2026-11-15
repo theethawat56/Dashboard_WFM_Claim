@@ -1,4 +1,5 @@
 import { getDb } from "../db";
+import { ensureFactorySubmissions } from "./factorySubmissions";
 import { SQL_NOT_VOIDED } from "../taskStatus";
 import { sqlDaysToRepairExpr, sqlShiftedWarrantyDate } from "../warrantyBuffer";
 import type { TaskListRow } from "@/types/dashboard";
@@ -24,6 +25,7 @@ export interface TaskListResult {
 }
 
 export async function getTasks(filters: TaskListFilters = {}): Promise<TaskListResult> {
+  await ensureFactorySubmissions();
   const db = getDb();
   const page = Math.max(1, filters.page ?? 1);
   const limit = Math.min(100, Math.max(1, filters.limit ?? 50));
@@ -110,8 +112,12 @@ export async function getTasks(filters: TaskListFilters = {}): Promise<TaskListR
         td.warranty_id,
         ${sqlShiftedWarrantyDate()} as warranty_start_date,
         td.warranty_period,
-        ${sqlDaysToRepairExpr()} as days_to_repair
-      ${baseSql}
+        ${sqlDaysToRepairExpr()} as days_to_repair,
+        CASE WHEN fs.task_id IS NOT NULL THEN 1 ELSE 0 END as factory_sent
+      ${baseSql.replace(
+        "WHERE",
+        "LEFT JOIN factory_submissions fs ON fs.task_id = t.id\n    WHERE"
+      )}
       ORDER BY t.timestamp DESC
       LIMIT ? OFFSET ?
     `,
@@ -139,6 +145,7 @@ export async function getTasks(filters: TaskListFilters = {}): Promise<TaskListR
       row.warranty_start_date != null ? String(row.warranty_start_date) : null,
     warranty_period: row.warranty_period != null ? String(row.warranty_period) : null,
     days_to_repair: row.days_to_repair != null ? Number(row.days_to_repair) : null,
+    factory_sent: Number(row.factory_sent ?? 0) === 1,
   }));
 
   return { rows, total, page, limit };

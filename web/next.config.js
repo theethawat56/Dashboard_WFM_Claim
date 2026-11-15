@@ -1,8 +1,12 @@
+const path = require("path");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: "standalone",
   reactStrictMode: true,
   experimental: {
-    serverComponentsExternalPackages: ["@react-pdf/renderer"],
+    outputFileTracingRoot: path.join(__dirname),
+    serverComponentsExternalPackages: ["@react-pdf/renderer", "@libsql/client"],
   },
 };
 

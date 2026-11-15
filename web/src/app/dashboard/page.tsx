@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { KpiCards } from "./_components/KpiCards";
 import type { SummaryData } from "./_components/KpiCards";
-import { ModelBreakdownTable } from "./_components/ModelBreakdownTable";
 import { MonthlyTrendChart } from "./_components/MonthlyTrendChart";
 import { SymptomFrequencyChart } from "./_components/SymptomFrequencyChart";
 import { DonutChartRepairClaim } from "./_components/DonutChartRepairClaim";
@@ -17,7 +17,12 @@ import { ClaimCompTab } from "./_components/ClaimCompTab";
 import { FactoryClaimTab } from "./_components/FactoryClaimTab";
 import { ClaimTrackingTab } from "./_components/ClaimTrackingTab";
 import { ClaimSummaryCard } from "./_components/ClaimSummaryCard";
-import type { DailyTrendRow, DailyTopSkuRow, ClaimCompOverall } from "@/types/dashboard";
+import { FactoryClaimQueueCard } from "./_components/FactoryClaimQueueCard";
+import { FactoryPortalDecisionsCard } from "./_components/FactoryPortalDecisionsCard";
+import { FactoryPortalInsightsCard } from "./_components/FactoryPortalInsightsCard";
+import { ModelFactoryStatusCard } from "./_components/ModelFactoryStatusCard";
+import { ClaimedModelsCard } from "./_components/ClaimedModelsCard";
+import type { DailyTrendRow, DailyTopSkuRow, ClaimCompOverall, ClaimedModelRow } from "@/types/dashboard";
 import { FilterBar } from "./_components/FilterBar";
 import { ByModelTable } from "./_components/ByModelTable";
 import type { ByModelRow } from "./_components/ByModelTable";
@@ -27,6 +32,13 @@ import { EvidenceExportPanel } from "./_components/EvidenceExportPanel";
 import type { EvidenceSummary } from "./_components/EvidenceExportPanel";
 import { ExportButtons } from "./_components/ExportButtons";
 import type { UnclaimedClaimsSummary } from "@/lib/queries/unclaimedClaims";
+import { bangkokDate } from "@/lib/bangkokDate";
+import {
+  clearDayStarted,
+  getStartedDate,
+  loadClaimedDraft,
+  saveClaimedDraft,
+} from "@/lib/dayClient";
 
 const TYPE_OPTIONS = [
   { value: "all", label: "ทั้งหมด" },
@@ -53,6 +65,9 @@ const RECLAIM_OPTIONS = [
 ];
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const [dayReady, setDayReady] = useState(false);
+  const [endingDay, setEndingDay] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<
     "overview" | "bymodel" | "tasks" | "evidence" | "claims" | "factory" | "tracking"
@@ -75,6 +90,7 @@ export default function DashboardPage() {
   const [dailyTrend, setDailyTrend] = useState<DailyTrendRow[]>([]);
   const [dailyDays, setDailyDays] = useState(30);
   const [dailyTopSkus, setDailyTopSkus] = useState<DailyTopSkuRow[]>([]);
+  const [claimedModels, setClaimedModels] = useState<ClaimedModelRow[] | null>(null);
   const [topSkuDate, setTopSkuDate] = useState(
     new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" })
   );
@@ -100,6 +116,83 @@ export default function DashboardPage() {
   const [unclaimedSummary, setUnclaimedSummary] =
     useState<UnclaimedClaimsSummary | null>(null);
   const [unclaimedLoading, setUnclaimedLoading] = useState(false);
+
+  useEffect(() => {
+    const today = bangkokDate();
+    if (getStartedDate() !== today) {
+      router.replace("/");
+      return;
+    }
+    const draft = loadClaimedDraft(today);
+    if (draft.length > 0) {
+      setClaimedSelectedTasks(Object.fromEntries(draft.map((row) => [row.task_number, row])));
+      setClaimedSelectedTaskNumbers(new Set(draft.map((row) => row.task_number)));
+    }
+    setDayReady(true);
+  }, [router]);
+
+  useEffect(() => {
+    if (!dayReady) return;
+    const today = bangkokDate();
+    const tasks = Object.values(claimedSelectedTasks);
+    saveClaimedDraft(tasks, today);
+    const timer = window.setTimeout(() => {
+      fetch("/api/dashboard/day-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          work_date: today,
+          claimed_task_numbers: tasks.map((row) => row.task_number),
+          status: "active",
+        }),
+      }).catch((e) => console.error(e));
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [claimedSelectedTasks, dayReady]);
+
+  const endDay = useCallback(async () => {
+    setEndingDay(true);
+    const today = bangkokDate();
+    const tasks = Object.values(claimedSelectedTasks);
+    try {
+      await fetch("/api/dashboard/day-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          work_date: today,
+          claimed_task_numbers: tasks.map((row) => row.task_number),
+          status: "ended",
+        }),
+      });
+    } catch (e) {
+      console.error(e);
+    }
+    saveClaimedDraft(tasks, today);
+    clearDayStarted();
+    router.push("/");
+  }, [claimedSelectedTasks, router]);
+
+  const toggleFactorySent = useCallback(async (row: TaskRow) => {
+    if (!row.id) return;
+    try {
+      const res = await fetch("/api/dashboard/factory-submissions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task_id: row.id, task_number: row.task_number }),
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as { sent?: boolean };
+      setTaskResult((prev) => ({
+        ...prev,
+        rows: prev.rows.map((item) =>
+          item.task_number === row.task_number ? { ...item, factory_sent: data.sent === true } : item
+        ),
+      }));
+      window.dispatchEvent(new Event("factory-submission-changed"));
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
 
   const toggleClaimedTask = useCallback((row: TaskRow) => {
     setClaimedSelectedTaskNumbers((prev) => {
@@ -209,12 +302,23 @@ export default function DashboardPage() {
 
   const fetchDailyTopSkus = useCallback(async () => {
     try {
-      const res = await fetch(`/api/dashboard/daily-top-skus?date=${topSkuDate}&limit=5`);
+      const res = await fetch(
+        `/api/dashboard/daily-top-skus?date=${topSkuDate}&limit=5&days=7`
+      );
       if (res.ok) setDailyTopSkus(await res.json());
     } catch (e) {
       console.error(e);
     }
   }, [topSkuDate]);
+
+  const fetchClaimedModels = useCallback(async () => {
+    try {
+      const res = await fetch("/api/dashboard/claimed-models");
+      if (res.ok) setClaimedModels(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
 
   const fetchCompMap = useCallback(async () => {
     try {
@@ -415,7 +519,8 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchCompMap();
     fetchCompOverall();
-  }, [fetchCompMap, fetchCompOverall]);
+    fetchClaimedModels();
+  }, [fetchCompMap, fetchCompOverall, fetchClaimedModels]);
 
   useEffect(() => {
     fetchByModel();
@@ -434,7 +539,6 @@ export default function DashboardPage() {
     else setEvidenceSummary(null);
   }, [selectedSku, fetchEvidence]);
 
-  const top10ForChart = byModel.length ? byModel.slice(0, 10) : [];
   const filteredByModel = modelSearch.trim()
     ? byModel.filter(
         (r) =>
@@ -493,6 +597,17 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex flex-col items-end gap-1">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={endingDay}
+              onClick={() => {
+                endDay().catch(() => undefined);
+              }}
+              className="whitespace-nowrap"
+            >
+              {endingDay ? "กำลังจบวัน..." : "จบวัน"}
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -555,11 +670,13 @@ export default function DashboardPage() {
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
+            <ModelFactoryStatusCard />
+            <FactoryClaimQueueCard onOpenTracking={() => setActiveTab("tracking")} />
             <KpiCards data={summary} />
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">
-                  สินค้า Top 5 ที่มีอัตราซ่อม/เคลมสูงสุดประจำวัน
+                  สินค้า Top 5 ที่มีอัตราซ่อม/เคลมสูงสุดย้อนหลัง 7 วัน
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -742,11 +859,11 @@ export default function DashboardPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">
-                    Top 10 รุ่นที่มียอดรวม (ซ่อม+เคลม)
+                    สรุปรุ่นที่เคลมโรงงานไปแล้ว
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <ModelBreakdownTable data={top10ForChart} />
+                  <ClaimedModelsCard rows={claimedModels} />
                 </CardContent>
               </Card>
               <Card>
@@ -936,6 +1053,7 @@ export default function DashboardPage() {
               onPageChange={setTaskPage}
               claimedSelected={claimedSelectedTaskNumbers}
               onToggleClaimed={toggleClaimedTask}
+              onToggleFactorySent={toggleFactorySent}
               compensationMap={compMap}
               onOpenCompensation={(row) => {
                 if (!row.sku) return;
@@ -955,6 +1073,8 @@ export default function DashboardPage() {
           </TabsContent>
 
           <TabsContent value="factory" className="space-y-6">
+            <FactoryPortalDecisionsCard />
+            <FactoryPortalInsightsCard />
             <FactoryClaimTab />
           </TabsContent>
 
