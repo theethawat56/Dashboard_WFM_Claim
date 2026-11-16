@@ -8,6 +8,7 @@ export const FACTORIES: { id: string; name: string; match: string }[] = [
   { id: "welland", name: "Guangdong Welland Technology Co., Ltd", match: "WELLAND" },
   { id: "genhigh", name: "GENHIGH TECH CO.,LTD", match: "GENHIGH" },
   { id: "stc", name: "STC CORPORATION LIMITED", match: "STC CORPORATION" },
+  { id: "hizero", name: "HIZERO HK LIMITED", match: "HIZERO" },
 ];
 
 export type FactoryRecord = {

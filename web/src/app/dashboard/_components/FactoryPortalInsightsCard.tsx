@@ -19,7 +19,7 @@ const STATUS_LABEL: Record<string, string> = {
   returned: "ตีกลับแล้ว",
 };
 
-const COLORS = ["#2563eb", "#059669", "#d97706", "#7c3aed", "#e11d48"];
+const COLORS = ["#2563eb", "#059669", "#d97706", "#7c3aed", "#e11d48", "#0891b2"];
 
 function days(value: number | null): string {
   if (value == null) return "—";

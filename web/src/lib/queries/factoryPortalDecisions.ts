@@ -10,6 +10,7 @@ const FACTORIES: { id: string; name: string; match: string }[] = [
   { id: "welland", name: "Guangdong Welland Technology Co., Ltd", match: "WELLAND" },
   { id: "genhigh", name: "GENHIGH TECH CO.,LTD", match: "GENHIGH" },
   { id: "stc", name: "STC CORPORATION LIMITED", match: "STC CORPORATION" },
+  { id: "hizero", name: "HIZERO HK LIMITED", match: "HIZERO" },
 ];
 
 const VALID_TYPES: CompType[] = ["cost_refund", "spare_parts", "deduce", "replacement"];
@@ -238,6 +239,7 @@ const SHORT_NAME: Record<string, string> = {
   welland: "WELLAND",
   genhigh: "GENHIGH",
   stc: "STC",
+  hizero: "HIZERO",
 };
 
 const THAI_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
