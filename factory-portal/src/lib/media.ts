@@ -12,6 +12,7 @@ export type CaseFile = {
 
 type SearchHit = {
   taskNumber?: string;
+  status?: string;
   detail?: Record<string, unknown>;
 };
 
@@ -61,15 +62,45 @@ function addFile(files: CaseFile[], seen: Set<string>, raw: string, kind: "video
   files.push({ kind, label, objectKey });
 }
 
-function filesFromHit(hit: SearchHit | undefined): CaseFile[] {
+function testVideoPaths(hit: SearchHit | undefined): string[] {
+  const paths: string[] = [];
+  collectStrings(hit?.detail?.testVideos, paths);
+  return paths;
+}
+
+function mntRefs(hit: SearchHit | undefined): string[] {
   const detail = hit?.detail;
   if (!detail) return [];
+  const info = (detail.taskInfo ?? detail.task_info) as { refNumbers?: unknown; ref_numbers?: unknown } | undefined;
+  const raw = info?.refNumbers ?? info?.ref_numbers;
+  if (!Array.isArray(raw)) return [];
+  const refs: string[] = [];
+  for (const value of raw) {
+    if (typeof value !== "string") continue;
+    const ref = value.trim();
+    if (ref.toUpperCase().startsWith("MNT-")) refs.push(ref);
+  }
+  return refs;
+}
+
+function cancelledRepairTestVideos(hit: SearchHit | undefined, hits: Map<string, SearchHit>): string[] {
+  const paths: string[] = [];
+  for (const ref of mntRefs(hit)) {
+    const linked = hits.get(ref);
+    if (!linked || String(linked.status ?? "").toUpperCase() !== "VOIDED") continue;
+    paths.push(...testVideoPaths(linked));
+  }
+  return paths;
+}
+
+function filesFromHit(hit: SearchHit | undefined, extraTestPaths: string[] = []): CaseFile[] {
+  const detail = hit?.detail;
+  if (!detail && extraTestPaths.length === 0) return [];
   const files: CaseFile[] = [];
   const seen = new Set<string>();
   const counts = { "test-video": 0, "technician-video": 0, photo: 0 };
 
-  const testVideos: string[] = [];
-  collectStrings(detail.testVideos, testVideos);
+  const testVideos = [...testVideoPaths(hit), ...extraTestPaths];
   for (const raw of testVideos) {
     if (fileKind(raw) === "image") continue;
     counts["test-video"] += 1;
@@ -78,7 +109,9 @@ function filesFromHit(hit: SearchHit | undefined): CaseFile[] {
   }
 
   const techPaths: string[] = [];
-  for (const source of [detail.serviceImages, detail.recorder, detail.images]) collectStrings(source, techPaths);
+  if (detail) {
+    for (const source of [detail.serviceImages, detail.recorder, detail.images]) collectStrings(source, techPaths);
+  }
   for (const raw of techPaths) {
     const kind = fileKind(raw);
     if (kind === "image") {
@@ -123,9 +156,25 @@ async function fetchTasksByNumber(taskNumbers: string[]): Promise<Map<string, Se
 
 export async function filesForTasks(taskNumbers: string[]): Promise<Map<string, CaseFile[]>> {
   const hits = await fetchTasksByNumber(taskNumbers);
+  const missingRefs = new Set<string>();
+  for (const taskNumber of new Set(taskNumbers)) {
+    for (const ref of mntRefs(hits.get(taskNumber))) {
+      if (!hits.has(ref)) missingRefs.add(ref);
+    }
+  }
+  if (missingRefs.size > 0) {
+    try {
+      const linked = await fetchTasksByNumber([...missingRefs]);
+      for (const [taskNumber, hit] of linked) hits.set(taskNumber, hit);
+    } catch (error) {
+      console.error("[factory media refs]", error);
+    }
+  }
+
   const files = new Map<string, CaseFile[]>();
   for (const taskNumber of new Set(taskNumbers)) {
-    files.set(taskNumber, filesFromHit(hits.get(taskNumber)));
+    const hit = hits.get(taskNumber);
+    files.set(taskNumber, filesFromHit(hit, cancelledRepairTestVideos(hit, hits)));
   }
   return files;
 }
