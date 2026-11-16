@@ -3,8 +3,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { CaseMedia, type CaseMediaFile } from "@/components/CaseMedia";
-import { ClaimRates } from "@/components/ClaimRates";
-import type { FactoryClaimRates } from "@/lib/claimRates";
 import { COMP_TYPES, type CaseStatus, type CompType } from "@/lib/compensation";
 
 export type BoardCase = {
@@ -43,24 +41,39 @@ function compLabel(value: string | null): string {
 
 const THAI = /[\u0E00-\u0E7F]/;
 
+function byNewest(a: BoardCase, b: BoardCase): number {
+  if (a.openedOn !== b.openedOn) {
+    if (!a.openedOn) return 1;
+    if (!b.openedOn) return -1;
+    return b.openedOn.localeCompare(a.openedOn);
+  }
+  return b.taskNumber.localeCompare(a.taskNumber);
+}
+
+function matchesSearch(row: BoardCase, needle: string): boolean {
+  return [row.taskNumber, row.serial, row.model, row.sku].some((value) => value.toLowerCase().includes(needle));
+}
+
 export function CaseBoard({
   token,
   factoryName,
   cases,
-  rates,
   mediaUnavailable,
 }: {
   token: string;
   factoryName: string;
   cases: BoardCase[];
-  rates: FactoryClaimRates;
   mediaUnavailable: boolean;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(cases);
   const [translating, setTranslating] = useState(false);
   const tried = useRef(new Set<string>());
-  const [openId, setOpenId] = useState<string | null>(cases.find((row) => row.status === "waiting" || row.status === "returned")?.id ?? null);
+  const [openId, setOpenId] = useState<string | null>(
+    cases
+      .filter((row) => row.status === "waiting" || row.status === "returned")
+      .sort(byNewest)[0]?.id ?? null
+  );
   const [decision, setDecision] = useState<"approved" | "rejected">("approved");
   const [compType, setCompType] = useState<CompType>("cost_refund");
   const [amount, setAmount] = useState("");
@@ -68,15 +81,18 @@ export function CaseBoard({
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
-  const groups = useMemo(
-    () => ({
-      open: rows.filter((row) => row.status === "waiting" || row.status === "returned"),
-      review: rows.filter((row) => row.status === "proposed" || row.status === "rejected"),
-      confirmed: rows.filter((row) => row.status === "confirmed"),
-    }),
-    [rows]
-  );
+  const groups = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const visible = needle ? rows.filter((row) => matchesSearch(row, needle)) : rows;
+    return {
+      visible,
+      open: visible.filter((row) => row.status === "waiting" || row.status === "returned").sort(byNewest),
+      review: visible.filter((row) => row.status === "proposed" || row.status === "rejected").sort(byNewest),
+      confirmed: visible.filter((row) => row.status === "confirmed").sort(byNewest),
+    };
+  }, [rows, query]);
 
   useEffect(() => {
     setRows(cases);
@@ -94,6 +110,7 @@ export function CaseBoard({
       element.classList.add("ring-2", "ring-slate-900");
       window.setTimeout(() => element.classList.remove("ring-2", "ring-slate-900"), 1800);
     }
+    focusLinkedCase();
     window.addEventListener("hashchange", focusLinkedCase);
     return () => window.removeEventListener("hashchange", focusLinkedCase);
   }, [rows]);
@@ -191,12 +208,20 @@ export function CaseBoard({
             photos from this case are listed on the case.
           </p>
         </div>
-        <a
-          href={`/f/${token}/export`}
-          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
-        >
-          Export Excel
-        </a>
+        <div className="flex flex-wrap gap-2">
+          <a
+            href={`/f/${token}/rates`}
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
+          >
+            Claim rates
+          </a>
+          <a
+            href={`/f/${token}/export`}
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
+          >
+            Export Excel
+          </a>
+        </div>
       </header>
 
       <dl className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -205,7 +230,21 @@ export function CaseBoard({
         <Stat label="Confirmed" value={groups.confirmed.length} />
       </dl>
 
-      <ClaimRates rates={rates} caseIds={cases.map((row) => row.id)} />
+      <label className="mt-6 block text-sm text-slate-700">
+        Find a case
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Case number, serial number, or model"
+          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-950"
+        />
+      </label>
+      {query.trim() && (
+        <p className="mt-2 text-sm text-slate-500">
+          {groups.visible.length.toLocaleString("en-US")} of {rows.length.toLocaleString("en-US")} cases
+        </p>
+      )}
 
       {translating && (
         <p className="mt-4 text-sm text-slate-500">Translating the remaining defect descriptions into English.</p>
@@ -214,6 +253,11 @@ export function CaseBoard({
       {rows.length === 0 && (
         <p className="mt-8 rounded-lg border border-slate-200 bg-white px-4 py-6 text-sm text-slate-600">
           No cases are waiting for {factoryName} this year.
+        </p>
+      )}
+      {rows.length > 0 && groups.visible.length === 0 && (
+        <p className="mt-8 rounded-lg border border-slate-200 bg-white px-4 py-6 text-sm text-slate-600">
+          No cases match that search.
         </p>
       )}
 

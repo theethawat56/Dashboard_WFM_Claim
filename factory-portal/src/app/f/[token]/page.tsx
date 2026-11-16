@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 import { CaseBoard } from "@/components/CaseBoard";
-import { listFactoryClaimRates } from "@/lib/claimRates";
 import { listFactoryCases } from "@/lib/cases";
 import { factoryByToken } from "@/lib/factories";
 import { filesForTasks } from "@/lib/media";
@@ -13,7 +12,7 @@ export default async function FactoryPage({ params }: { params: Promise<{ token:
   const factory = await factoryByToken(token);
   if (!factory) notFound();
 
-  const [cases, rates] = await Promise.all([listFactoryCases(factory.id), listFactoryClaimRates(factory.id)]);
+  const cases = await listFactoryCases(factory.id);
   const english = await translateMany(cases.map((row) => row.symptomOriginal));
   let mediaUnavailable = false;
   const media = await filesForTasks(cases.map((row) => row.taskNumber)).catch((error: unknown) => {
@@ -26,7 +25,6 @@ export default async function FactoryPage({ params }: { params: Promise<{ token:
     <CaseBoard
       token={token}
       factoryName={factory.name}
-      rates={rates}
       cases={cases.map((row) => ({
         id: row.id,
         taskNumber: row.taskNumber,

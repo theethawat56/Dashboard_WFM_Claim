@@ -1,17 +1,7 @@
 "use client";
 
-import { Fragment, type MouseEvent } from "react";
+import { Fragment } from "react";
 import type { FactoryClaimRates } from "@/lib/claimRates";
-
-function jumpToCase(event: MouseEvent<HTMLAnchorElement>, taskId: string) {
-  event.preventDefault();
-  const next = `#case-${taskId}`;
-  if (window.location.hash === next) {
-    window.dispatchEvent(new HashChangeEvent("hashchange"));
-    return;
-  }
-  window.location.hash = next;
-}
 
 function percent(value: number | null): string {
   if (value == null) return "—";
@@ -23,7 +13,15 @@ function count(value: number, singular: string): string {
   return `${value.toLocaleString("en-US")} ${label}`;
 }
 
-export function ClaimRates({ rates, caseIds }: { rates: FactoryClaimRates; caseIds: string[] }) {
+export function ClaimRates({
+  token,
+  rates,
+  caseIds,
+}: {
+  token: string;
+  rates: FactoryClaimRates;
+  caseIds: string[];
+}) {
   const onPage = new Set(caseIds);
   return (
     <section className="mt-8">
@@ -97,8 +95,7 @@ export function ClaimRates({ rates, caseIds }: { rates: FactoryClaimRates; caseI
                                   {onPage.has(item.taskId) ? (
                                     <a
                                       className="font-medium text-blue-700 hover:underline"
-                                      href={`#case-${item.taskId}`}
-                                      onClick={(event) => jumpToCase(event, item.taskId)}
+                                      href={`/f/${token}#case-${item.taskId}`}
                                     >
                                       {item.taskNumber}
                                     </a>
@@ -108,7 +105,7 @@ export function ClaimRates({ rates, caseIds }: { rates: FactoryClaimRates; caseI
                                   <span className="text-xs text-slate-500">{item.openedOn || "No open date"}</span>
                                   {item.serial ? <span className="font-mono text-xs text-slate-500">{item.serial}</span> : null}
                                   {onPage.has(item.taskId) ? (
-                                    <span className="text-xs text-slate-400">On this page</span>
+                                    <span className="text-xs text-slate-400">Open this case</span>
                                   ) : (
                                     <span className="text-xs text-slate-400">Not in the decision list</span>
                                   )}
