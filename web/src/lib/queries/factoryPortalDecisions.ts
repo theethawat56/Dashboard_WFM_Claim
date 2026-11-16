@@ -1,7 +1,12 @@
 import { randomBytes } from "crypto";
 import { getDb } from "../db";
+import { bangkokDate } from "../bangkokDate";
+import { sqlDaysToRepairExpr } from "../warrantyBuffer";
 import { ensureClaimCompTables, insertBatch } from "./claimCompensations";
 import type { CompType } from "@/types/dashboard";
+
+/** First day a factory could open its claim link. */
+const VISIBLE_FROM = "2026-11-13";
 
 /** Keep this list in sync with factory-portal/src/lib/factories.ts */
 const FACTORIES: { id: string; name: string; match: string }[] = [
@@ -12,6 +17,19 @@ const FACTORIES: { id: string; name: string; match: string }[] = [
   { id: "stc", name: "STC CORPORATION LIMITED", match: "STC CORPORATION" },
   { id: "hizero", name: "HIZERO HK LIMITED", match: "HIZERO" },
 ];
+
+function matchFactoryId(supplierName: string | null | undefined): string | null {
+  const upper = (supplierName ?? "").toUpperCase();
+  if (!upper.trim()) return null;
+  for (const factory of FACTORIES) {
+    if (upper.includes(factory.match)) return factory.id;
+  }
+  return null;
+}
+
+function visibleOn(opened: string): string {
+  return opened > VISIBLE_FROM ? opened : VISIBLE_FROM;
+}
 
 const VALID_TYPES: CompType[] = ["cost_refund", "spare_parts", "deduce", "replacement"];
 
@@ -227,6 +245,9 @@ export type FactoryPortalInsights = {
     rejected: number;
     byType: Record<string, number>;
     medianDays: number | null;
+    waitingCount: number;
+    medianWaitDays: number | null;
+    oldestWaitDays: number | null;
   }[];
   weeks: FactoryWeekPoint[];
   approvals: FactoryOutcomeRow[];
@@ -291,6 +312,49 @@ function addDays(ymd: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+async function listWaitingByFactory(): Promise<Map<string, number[]>> {
+  const today = bangkokDate();
+  const yearFrom = `${today.slice(0, 4)}-01-01`;
+  const opened = `date(datetime(t.timestamp / 1000, 'unixepoch', '+7 hours'))`;
+  const days = sqlDaysToRepairExpr();
+  const result = await getDb().execute({
+    sql: `
+      SELECT m.supplier_name, ${opened} AS opened_on
+      FROM tasks t
+      JOIN task_details td ON td.task_id = t.id
+      JOIN po_case_matches m ON m.task_id = t.id
+      LEFT JOIN (
+        SELECT task_id FROM claim_comp_batch_tasks GROUP BY task_id
+      ) bt ON bt.task_id = t.id
+      LEFT JOIN factory_portal_decisions d ON d.task_id = t.id
+      WHERE t.status != 'VOIDED'
+        AND bt.task_id IS NULL
+        AND ${opened} >= ?
+        AND ${opened} <= ?
+        AND ${days} IS NOT NULL
+        AND ${days} <= 365
+        AND LOWER(TRIM(COALESCE(td.product_serial, ''))) NOT IN ('', '-', 'n/a', 'none', 'null')
+        AND NOT (
+          TRIM(COALESCE(td.issue_group, '')) = ''
+          AND TRIM(COALESCE(td.issue_description, '')) = ''
+        )
+        AND (d.task_id IS NULL OR d.status = 'waiting')
+    `,
+    args: [yearFrom, today],
+  });
+  const byFactory = new Map<string, number[]>();
+  for (const raw of result.rows) {
+    const record = raw as Record<string, unknown>;
+    const factoryId = matchFactoryId(record.supplier_name != null ? String(record.supplier_name) : null);
+    const openedOn = record.opened_on != null ? String(record.opened_on) : "";
+    if (!factoryId || !openedOn) continue;
+    const waits = byFactory.get(factoryId) ?? [];
+    waits.push(daysBetween(visibleOn(openedOn), today));
+    byFactory.set(factoryId, waits);
+  }
+  return byFactory;
+}
+
 export async function listFactoryPortalInsights(): Promise<FactoryPortalInsights> {
   await ensureFactoryPortal();
   const db = getDb();
@@ -313,6 +377,7 @@ export async function listFactoryPortalInsights(): Promise<FactoryPortalInsights
     if (!submittedYmd) continue;
     const decision = String(record.decision ?? "") === "rejected" ? "rejected" : "approved";
     const opened = record.timestamp != null ? bangkokYmd(Number(record.timestamp)) : null;
+    const visible = opened ? visibleOn(opened) : null;
     rows.push({
       taskId: String(record.task_id ?? ""),
       taskNumber: String(record.task_number ?? ""),
@@ -325,12 +390,14 @@ export async function listFactoryPortalInsights(): Promise<FactoryPortalInsights
       reason: record.reason != null ? String(record.reason) : null,
       status: String(record.status ?? ""),
       submittedAt,
-      daysToReply: opened ? daysBetween(opened, submittedYmd) : null,
+      daysToReply: visible ? daysBetween(visible, submittedYmd) : null,
     });
   }
 
+  const waiting = await listWaitingByFactory();
   const factories = FACTORIES.map((factory) => {
     const mine = rows.filter((row) => row.factoryId === factory.id);
+    const pending = waiting.get(factory.id) ?? [];
     const byType: Record<string, number> = { cost_refund: 0, spare_parts: 0, deduce: 0, replacement: 0 };
     for (const row of mine) {
       if (row.decision === "approved" && row.compType && byType[row.compType] != null) byType[row.compType] += 1;
@@ -343,6 +410,9 @@ export async function listFactoryPortalInsights(): Promise<FactoryPortalInsights
       rejected: mine.filter((row) => row.decision === "rejected").length,
       byType,
       medianDays: median(mine.flatMap((row) => (row.daysToReply == null ? [] : [row.daysToReply]))),
+      waitingCount: pending.length,
+      medianWaitDays: median(pending),
+      oldestWaitDays: pending.length > 0 ? Math.max(...pending) : null,
     };
   });
 

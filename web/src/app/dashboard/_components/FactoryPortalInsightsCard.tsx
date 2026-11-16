@@ -21,6 +21,14 @@ const STATUS_LABEL: Record<string, string> = {
 
 const COLORS = ["#2563eb", "#059669", "#d97706", "#7c3aed", "#e11d48", "#0891b2"];
 
+function speedHint(latest: number | null, previous: number | null): string {
+  if (latest == null) return "เทียบจากวันที่เคสขึ้นในลิงก์";
+  if (previous == null) return `สัปดาห์ล่าสุด ${days(latest)}`;
+  const delta = Math.round((latest - previous) * 10) / 10;
+  const change = delta < 0 ? `เร็วขึ้น ${days(Math.abs(delta))}` : delta > 0 ? `ช้าลง ${days(delta)}` : "เท่ากับสัปดาห์ก่อน";
+  return `สัปดาห์ล่าสุด ${days(latest)} · สัปดาห์ก่อน ${days(previous)} · ${change}`;
+}
+
 function days(value: number | null): string {
   if (value == null) return "—";
   return Number.isInteger(value) ? `${value} วัน` : `${value.toFixed(1)} วัน`;
@@ -62,7 +70,8 @@ export function FactoryPortalInsightsCard() {
       <CardHeader className="pb-2">
         <CardTitle className="text-base">ผลตอบโรงงาน และความเร็วรายสัปดาห์</CardTitle>
         <p className="text-sm text-slate-500">
-          นับจากวันเปิดงานถึงวันที่โรงงานกดส่งคำตอบ ตามเวลาไทย สัปดาห์เริ่มวันจันทร์ ค่ายิ่งน้อยยิ่งตอบเร็ว
+          นับจากวันที่เคสขึ้นในลิงก์โรงงานถึงวันที่โรงงานกดส่ง ตามเวลาไทย เคสที่เปิดก่อนวันที่ 13 พ.ย. 2569
+          เริ่มนับจากวันนั้น เพราะเป็นวันแรกที่มีลิงก์ สัปดาห์เริ่มวันจันทร์ ค่ายิ่งน้อยยิ่งตอบเร็ว
         </p>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -71,6 +80,7 @@ export function FactoryPortalInsightsCard() {
         {data && data.replies === 0 && (
           <p className="text-sm text-slate-600">ยังไม่มีคำตอบจากโรงงาน จึงยังเทียบความเร็วรายสัปดาห์ไม่ได้</p>
         )}
+        {data && <WaitingTable factories={data.factories} />}
         {data && data.replies > 0 && (
           <>
             <div className="grid gap-3 sm:grid-cols-4">
@@ -80,13 +90,7 @@ export function FactoryPortalInsightsCard() {
               <Stat
                 label="มัธยฐานวันตอบกลับ"
                 value={days(data.medianDays)}
-                hint={
-                  data.latestMedianDays == null
-                    ? "เทียบจากงานที่มีวันเปิดงาน"
-                    : data.previousMedianDays == null
-                      ? `สัปดาห์ล่าสุด ${days(data.latestMedianDays)}`
-                      : `สัปดาห์ล่าสุด ${days(data.latestMedianDays)} · สัปดาห์ก่อน ${days(data.previousMedianDays)}`
-                }
+                hint={speedHint(data.latestMedianDays, data.previousMedianDays)}
               />
             </div>
 
@@ -123,7 +127,7 @@ export function FactoryPortalInsightsCard() {
             <div>
               <h3 className="mb-2 text-sm font-medium text-slate-800">ความเร็วที่เคลมกลับมา เทียบทุกสัปดาห์</h3>
               {chartRows.length === 0 ? (
-                <p className="text-sm text-slate-600">มีคำตอบแล้ว แต่ยังไม่มีวันเปิดงานสำหรับคำนวณความเร็ว</p>
+                <p className="text-sm text-slate-600">มีคำตอบแล้ว แต่ยังไม่มีวันที่ใช้คำนวณความเร็ว</p>
               ) : (
                 <div className="h-72 w-full">
                   <ResponsiveContainer width="100%" height="100%">
@@ -217,6 +221,36 @@ export function FactoryPortalInsightsCard() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function WaitingTable({ factories }: { factories: FactoryPortalInsights["factories"] }) {
+  return (
+    <div>
+      <h3 className="mb-2 text-sm font-medium text-slate-800">เคสที่ยังไม่ตอบ ใช้เร่งโรงงานที่ช้า</h3>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-left text-sm">
+          <thead className="text-xs text-slate-500">
+            <tr>
+              <th className="px-2 py-2 font-medium">โรงงาน</th>
+              <th className="px-2 py-2 font-medium">ยังไม่ตอบ</th>
+              <th className="px-2 py-2 font-medium">มัธยฐานวันที่ค้าง</th>
+              <th className="px-2 py-2 font-medium">ค้างนานสุด</th>
+            </tr>
+          </thead>
+          <tbody>
+            {factories.map((factory) => (
+              <tr key={factory.id} className="border-t border-slate-100">
+                <td className="px-2 py-2 text-xs">{factory.shortName}</td>
+                <td className="px-2 py-2">{factory.waitingCount}</td>
+                <td className="px-2 py-2">{days(factory.medianWaitDays)}</td>
+                <td className="px-2 py-2">{days(factory.oldestWaitDays)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
