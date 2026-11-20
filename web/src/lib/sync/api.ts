@@ -151,6 +151,25 @@ function mergeTasks(primary: Task[], extra: Task[]): Task[] {
   return [...map.values()];
 }
 
+/** Repair tasks created or updated at or after `cutoff` (ms), including ones voided in that window. */
+export async function fetchRepairTouchedSince(cutoff: number): Promise<Task[]> {
+  const updatedOpts = {
+    sort: "updatedTimestamp:desc",
+    cutoffOnUpdated: true,
+  };
+  const voidedOpts = {
+    statusFilter: "status = VOIDED",
+    sort: "updatedTimestamp:desc",
+    cutoffOnUpdated: true,
+  };
+  const [created, updated, voided] = await Promise.all([
+    fetchAllPages(WORKFLOWS.repair.id, cutoff),
+    fetchAllPages(WORKFLOWS.repair.id, cutoff, updatedOpts),
+    fetchAllPages(WORKFLOWS.repair.id, cutoff, voidedOpts),
+  ]);
+  return mergeTasks(mergeTasks(created, updated), voided);
+}
+
 export async function fetchBothWorkflows(
   timestampCutoff?: number
 ): Promise<{ repair: Task[]; claim: Task[] }> {

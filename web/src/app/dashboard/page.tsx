@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -96,6 +96,7 @@ export default function DashboardPage() {
   );
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const syncingRef = useRef(false);
 
   // Claim compensation state
   const [compMap, setCompMap] = useState<Record<string, number>>({});
@@ -476,15 +477,17 @@ export default function DashboardPage() {
     }
   }, []);
 
-  const handleResync = useCallback(async () => {
+  const handleUpdateRepairs = useCallback(async () => {
+    if (syncingRef.current) return;
+    syncingRef.current = true;
     setSyncing(true);
     setSyncMsg(null);
     try {
-      const res = await fetch("/api/sync/resync", { method: "POST" });
+      const res = await fetch("/api/sync/repair-today", { method: "POST" });
       const data = await res.json();
       if (data.ok) {
         setSyncMsg(
-          `Sync สำเร็จ — ซ่อม ${data.repairFetched} รายการ, เคลม ${data.claimFetched} รายการ, อัพเดท ${data.totalUpserted} รายการ`
+          `อัปเดตงานซ่อมวันนี้แล้ว — ดึง ${data.repairFetched} รายการ, บันทึก ${data.totalUpserted} รายการ`
         );
         fetchSummary();
         fetchTrend();
@@ -492,15 +495,32 @@ export default function DashboardPage() {
         fetchDailyTopSkus();
         fetchByModel();
         fetchSymptoms();
+        fetchTasks();
       } else {
-        setSyncMsg(`Sync ผิดพลาด: ${data.error}`);
+        setSyncMsg(`อัปเดตผิดพลาด: ${data.error}`);
       }
     } catch (e) {
-      setSyncMsg(`Sync ผิดพลาด: ${e instanceof Error ? e.message : String(e)}`);
+      setSyncMsg(`อัปเดตผิดพลาด: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
+      syncingRef.current = false;
       setSyncing(false);
     }
-  }, [fetchSummary, fetchTrend, fetchDailyTrend, fetchDailyTopSkus, fetchByModel, fetchSymptoms]);
+  }, [
+    fetchSummary,
+    fetchTrend,
+    fetchDailyTrend,
+    fetchDailyTopSkus,
+    fetchByModel,
+    fetchSymptoms,
+    fetchTasks,
+  ]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      handleUpdateRepairs().catch(() => undefined);
+    }, 60 * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, [handleUpdateRepairs]);
 
   useEffect(() => {
     fetchSummary();
@@ -612,7 +632,9 @@ export default function DashboardPage() {
               size="sm"
               variant="outline"
               disabled={syncing}
-              onClick={handleResync}
+              onClick={() => {
+                handleUpdateRepairs().catch(() => undefined);
+              }}
               className="whitespace-nowrap"
             >
               {syncing ? (
@@ -621,7 +643,7 @@ export default function DashboardPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  กำลัง Sync...
+                  กำลังอัปเดต...
                 </>
               ) : (
                 <>
@@ -629,10 +651,13 @@ export default function DashboardPage() {
                     <path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0115-6.7L21 8" />
                     <path d="M3 22v-6h6" /><path d="M21 12a9 9 0 01-15 6.7L3 16" />
                   </svg>
-                  Re-Sync (30 วัน)
+                  อัปเดตงานซ่อมวันนี้
                 </>
               )}
             </Button>
+            <p className="max-w-xs text-right text-[11px] text-slate-400">
+              ดึงงานซ่อมที่สร้างหรืออัปเดตวันนี้ทุกชั่วโมง
+            </p>
             {syncMsg && (
               <p className={`max-w-xs text-right text-xs ${syncMsg.includes("ผิดพลาด") ? "text-red-600" : "text-green-600"}`}>
                 {syncMsg}

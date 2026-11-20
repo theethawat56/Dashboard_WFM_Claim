@@ -2,6 +2,12 @@ export function bangkokDate(d = new Date()): string {
   return d.toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
 }
 
+/** Unix ms at 00:00 Asia/Bangkok on the calendar day of `d`. */
+export function bangkokStartOfDayMs(d = new Date()): number {
+  const [y, m, day] = bangkokDate(d).split("-").map(Number);
+  return Date.UTC(y || 1970, (m || 1) - 1, day || 1) - 7 * 60 * 60 * 1000;
+}
+
 /** Shift a YYYY-MM-DD date by whole days, independent of the machine timezone. */
 export function shiftIsoDate(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);

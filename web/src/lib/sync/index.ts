@@ -1,5 +1,6 @@
 import { getDb } from "../db";
-import { fetchBothWorkflows, fetchSkuBatch } from "./api";
+import { bangkokDate, bangkokStartOfDayMs } from "../bangkokDate";
+import { fetchBothWorkflows, fetchRepairTouchedSince, fetchSkuBatch } from "./api";
 import { upsertTasks } from "./upsert";
 import { fetchWarrantyForPendingTasks } from "./warranty";
 import type { Task } from "./types";
@@ -264,6 +265,149 @@ export async function runRecentSync(days: number = 30): Promise<SyncResult> {
       console.error("[sync] Failed to log sync error:", logErr);
     }
     console.error(`[sync] Recent ${days}d sync failed:`, errorMessage);
+    throw err;
+  }
+}
+
+function productIdOf(task: Task): string {
+  const detail = task.detail as
+    | { productInfo?: { id?: string }; product_info?: { id?: string } }
+    | undefined;
+  return (detail?.productInfo?.id ?? detail?.product_info?.id ?? "").trim();
+}
+
+/** Keep a previously stored SKU when the product API returns blank. */
+async function fillMissingSkusFromDb(
+  tasks: Task[],
+  skuMap: Map<string, string>
+): Promise<void> {
+  const taskToProduct = new Map<string, string>();
+  for (const task of tasks) {
+    if (!task.id) continue;
+    const productId = productIdOf(task);
+    if (!productId || (skuMap.get(productId) ?? "") !== "") continue;
+    taskToProduct.set(task.id, productId);
+  }
+  const ids = Array.from(taskToProduct.keys());
+  if (ids.length === 0) return;
+
+  const db = getDb();
+  for (let i = 0; i < ids.length; i += 80) {
+    const chunk = ids.slice(i, i + 80);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const rows = await db.execute({
+      sql: `SELECT task_id, sku FROM task_details
+            WHERE task_id IN (${placeholders})
+              AND sku IS NOT NULL AND TRIM(sku) != ''`,
+      args: chunk,
+    });
+    for (const row of rows.rows) {
+      const taskId = String(row.task_id ?? "");
+      const sku = String(row.sku ?? "").trim();
+      const productId = taskToProduct.get(taskId);
+      if (!productId || !sku || (skuMap.get(productId) ?? "") !== "") continue;
+      skuMap.set(productId, sku);
+    }
+  }
+}
+
+export interface TodayRepairSyncResult extends SyncResult {
+  workDate: string;
+}
+
+/** Repair tasks created or updated since 00:00 Asia/Bangkok today. */
+export async function runTodayRepairSync(
+  now: Date = new Date()
+): Promise<TodayRepairSyncResult> {
+  const db = getDb();
+  const startedAt = toISO(new Date());
+  const workDate = bangkokDate(now);
+  const cutoff = bangkokStartOfDayMs(now);
+  let repairFetched = 0;
+  let totalUpserted = 0;
+  let skuFetched = 0;
+  let skuFailed = 0;
+
+  try {
+    const repair = await fetchRepairTouchedSince(cutoff);
+    repairFetched = repair.length;
+
+    const productIds = collectProductIds(repair);
+    const skuMap = await fetchSkuBatch(productIds);
+    await fillMissingSkusFromDb(repair, skuMap);
+    const stats = computeSkuStats(productIds, skuMap);
+    skuFetched = stats.fetched;
+    skuFailed = stats.failed;
+
+    totalUpserted = await upsertTasks(repair, "repair", skuMap);
+
+    const finishedAt = toISO(new Date());
+    await db.execute({
+      sql: `INSERT INTO sync_log (
+        sync_type, workflow_ids, started_at, finished_at,
+        repair_fetched, claim_fetched, total_upserted, status,
+        sku_fetched, sku_failed, warranty_fetched, warranty_failed
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        "repair-today",
+        "ulMEhA",
+        startedAt,
+        finishedAt,
+        repairFetched,
+        0,
+        totalUpserted,
+        "success",
+        skuFetched,
+        skuFailed,
+        0,
+        0,
+      ],
+    });
+
+    console.log(
+      `[sync] Today repair sync ${workDate} done. repair=${repairFetched} upserted=${totalUpserted} sku_fetched=${skuFetched} sku_failed=${skuFailed}`
+    );
+
+    return {
+      workDate,
+      repairFetched,
+      claimFetched: 0,
+      totalUpserted,
+      skuFetched,
+      skuFailed,
+      warrantyFetched: 0,
+      warrantyFailed: 0,
+    };
+  } catch (err) {
+    const finishedAt = toISO(new Date());
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    try {
+      await db.execute({
+        sql: `INSERT INTO sync_log (
+          sync_type, workflow_ids, started_at, finished_at,
+          repair_fetched, claim_fetched, total_upserted, status, error_message,
+          sku_fetched, sku_failed, warranty_fetched, warranty_failed
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          "repair-today",
+          "ulMEhA",
+          startedAt,
+          finishedAt,
+          repairFetched,
+          0,
+          totalUpserted,
+          "error",
+          errorMessage,
+          skuFetched,
+          skuFailed,
+          0,
+          0,
+        ],
+      });
+    } catch (logErr) {
+      console.error("[sync] Failed to log sync error:", logErr);
+    }
+    console.error("[sync] Today repair sync failed:", errorMessage);
     throw err;
   }
 }
