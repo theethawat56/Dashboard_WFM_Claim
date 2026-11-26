@@ -18,6 +18,8 @@ export interface ByModelRow {
   risk_level?: "high" | "medium" | "low";
   top_issue_group?: string;
   peak_month?: string;
+  /** Claim jobs opened in each of the last 6 Bangkok months, oldest first. */
+  claim_trend?: number[];
 }
 
 export interface MonthlyTrendRow {

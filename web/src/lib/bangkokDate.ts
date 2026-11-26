@@ -25,6 +25,17 @@ export function lookbackRange(
   return { from: shiftIsoDate(endDate, -(span - 1)), to: endDate };
 }
 
+/** `count` calendar months ending with the month of `today`, oldest first, as YYYY-MM. */
+export function recentMonths(count: number, today = bangkokDate()): string[] {
+  const [year, month] = today.split("-").map(Number);
+  const keys: string[] = [];
+  for (let i = count - 1; i >= 0; i -= 1) {
+    const date = new Date(Date.UTC(year, month - 1 - i, 1));
+    keys.push(date.toISOString().slice(0, 7));
+  }
+  return keys;
+}
+
 export function formatThaiDate(isoDate: string): string {
   const [y, m, day] = isoDate.split("-").map(Number);
   if (!y || !m || !day) return isoDate;

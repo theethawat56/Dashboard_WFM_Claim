@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { recentMonths } from "@/lib/bangkokDate";
 import { formatThaiNumber } from "@/lib/utils";
 
 export interface ByModelRow {
@@ -16,11 +16,47 @@ export interface ByModelRow {
   risk_level?: "high" | "medium" | "low";
   top_issue_group?: string;
   peak_month?: string;
+  claim_trend?: number[];
 }
 
 export interface CompSummaryBySku {
   total_amount: number;
   compensated_tasks: number;
+}
+
+const THAI_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+
+function ClaimSpark({ values }: { values: number[] }) {
+  const series = values.length === 6 ? values : [0, 0, 0, 0, 0, 0];
+  const months = recentMonths(6);
+  const width = 92;
+  const height = 28;
+  const pad = 3;
+  const max = Math.max(1, ...series);
+  const points = series
+    .map((value, index) => {
+      const x = pad + (index * (width - pad * 2)) / (series.length - 1);
+      const y = height - pad - (value / max) * (height - pad * 2);
+      return `${x},${y}`;
+    })
+    .join(" ");
+  const first = series[0] ?? 0;
+  const last = series[series.length - 1] ?? 0;
+  const color = last < first ? "#059669" : last > first ? "#dc2626" : "#64748b";
+  const title = series
+    .map((value, index) => {
+      const month = Number(months[index]?.slice(5, 7));
+      return `${THAI_MONTHS[month - 1] ?? months[index]} ${value}`;
+    })
+    .join(" · ");
+  return (
+    <span className="inline-flex items-center gap-2" title={title}>
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
+        <polyline fill="none" stroke={color} strokeWidth="1.75" strokeLinejoin="round" strokeLinecap="round" points={points} />
+      </svg>
+      <span className="w-6 text-right text-xs tabular-nums text-slate-600">{formatThaiNumber(last)}</span>
+    </span>
+  );
 }
 
 type DialogMode = "excel" | "video";
@@ -177,19 +213,6 @@ export function ByModelTable({
     );
   }
 
-  const riskLabel = (r: ByModelRow) =>
-    r.risk_level === "high"
-      ? "สูงมาก"
-      : r.risk_level === "medium"
-        ? "กลาง"
-        : "ต่ำ";
-  const riskVariant = (r: ByModelRow) =>
-    r.risk_level === "high"
-      ? "riskHigh"
-      : r.risk_level === "medium"
-        ? "riskMedium"
-        : "riskLow";
-
   return (
     <>
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
@@ -205,7 +228,9 @@ export function ByModelTable({
               <th className="px-4 py-3 font-medium text-slate-700">ซ่อมไม่หาย</th>
               <th className="px-4 py-3 font-medium text-slate-700">อาการหลัก</th>
               <th className="px-4 py-3 font-medium text-slate-700">เดือนที่มีปัญหามากสุด</th>
-              <th className="px-4 py-3 font-medium text-slate-700">ความเสี่ยง</th>
+              <th className="px-4 py-3 font-medium text-slate-700" title="งานเคลมที่เปิดใน 6 เดือนล่าสุด เส้นเขียวคือเดือนล่าสุดน้อยกว่าเดือนแรก">
+                เคลม 6 เดือน
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -240,14 +265,7 @@ export function ByModelTable({
                   {r.peak_month ?? "-"}
                 </td>
                 <td className="px-4 py-2">
-                  <Badge
-                    variant={
-                      (riskVariant(r) as "riskHigh" | "riskMedium" | "riskLow") ??
-                      "default"
-                    }
-                  >
-                    {riskLabel(r)}
-                  </Badge>
+                  <ClaimSpark values={r.claim_trend ?? []} />
                 </td>
               </tr>
             ))}

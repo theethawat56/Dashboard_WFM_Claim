@@ -1,4 +1,5 @@
 import { getDb } from "../db";
+import { bangkokDate, recentMonths } from "../bangkokDate";
 import { SQL_NOT_VOIDED } from "../taskStatus";
 import { sqlInWarranty } from "../warrantyBuffer";
 import type { ByModelRow } from "@/types/dashboard";
@@ -93,6 +94,7 @@ export async function getByModel(filters: ByModelFilters = {}): Promise<ByModelR
     unfixed_count: Number(row.unfixed_count ?? 0),
   }));
 
+  const claimTrend = await claimTrendBySku();
   const withExtras: ByModelRow[] = [];
   for (const row of rows) {
     const [topIssue, peakMonth] = await Promise.all([
@@ -104,6 +106,7 @@ export async function getByModel(filters: ByModelFilters = {}): Promise<ByModelR
         ...row,
         top_issue_group: topIssue ?? undefined,
         peak_month: peakMonth ?? undefined,
+        claim_trend: claimTrend.get(row.sku) ?? recentMonths(6).map(() => 0),
       })
     );
   }
@@ -112,6 +115,41 @@ export async function getByModel(filters: ByModelFilters = {}): Promise<ByModelR
     return withExtras.filter((r) => r.risk_level === filters.risk);
   }
   return withExtras;
+}
+
+async function claimTrendBySku(): Promise<Map<string, number[]>> {
+  const months = recentMonths(6);
+  const opened = `date(datetime(t.timestamp / 1000, 'unixepoch', '+7 hours'))`;
+  const result = await getDb().execute({
+    sql: `
+      SELECT td.sku AS sku,
+             strftime('%Y-%m', ${opened}) AS month,
+             COUNT(*) AS cnt
+      FROM tasks t
+      JOIN task_details td ON td.task_id = t.id
+      WHERE ${SQL_NOT_VOIDED}
+        AND ${sqlInWarranty()}
+        AND t.task_type = 'claim'
+        AND td.sku IS NOT NULL
+        AND TRIM(td.sku) != ''
+        AND ${opened} >= ?
+        AND ${opened} <= ?
+      GROUP BY td.sku, month
+    `,
+    args: [`${months[0]}-01`, bangkokDate()],
+  });
+  const bySku = new Map<string, number[]>();
+  for (const raw of result.rows) {
+    const row = raw as Record<string, unknown>;
+    const sku = String(row.sku ?? "").trim();
+    const month = String(row.month ?? "");
+    const index = months.indexOf(month);
+    if (!sku || index < 0) continue;
+    const series = bySku.get(sku) ?? months.map(() => 0);
+    series[index] = Number(row.cnt ?? 0);
+    bySku.set(sku, series);
+  }
+  return bySku;
 }
 
 async function getTopIssueForSku(
