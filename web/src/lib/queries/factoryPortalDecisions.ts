@@ -209,9 +209,12 @@ export async function returnFactoryDecision(taskId: string): Promise<{ ok: true 
   return { ok: true };
 }
 
+export type FactoryCaseKind = "clm" | "mnt";
+
 export type FactoryOutcomeRow = {
   taskId: string;
   taskNumber: string;
+  kind: FactoryCaseKind;
   factoryId: string;
   factoryName: string;
   decision: "approved" | "rejected";
@@ -224,30 +227,58 @@ export type FactoryOutcomeRow = {
   daysToReply: number | null;
 };
 
+export type FactoryWeekSlice = { medianDays: number | null; count: number };
+
 export type FactoryWeekPoint = {
   weekStart: string;
   label: string;
-  byFactory: Record<string, { medianDays: number | null; count: number }>;
+  byFactory: Record<string, FactoryWeekSlice & { clm: FactoryWeekSlice; mnt: FactoryWeekSlice }>;
 };
 
 export type FactoryPortalInsights = {
   replies: number;
+  repliesClm: number;
+  repliesMnt: number;
   approved: number;
+  approvedClm: number;
+  approvedMnt: number;
   rejected: number;
+  rejectedClm: number;
+  rejectedMnt: number;
   medianDays: number | null;
+  medianDaysClm: number | null;
+  medianDaysMnt: number | null;
   latestMedianDays: number | null;
+  latestMedianDaysClm: number | null;
+  latestMedianDaysMnt: number | null;
   previousMedianDays: number | null;
+  previousMedianDaysClm: number | null;
+  previousMedianDaysMnt: number | null;
   factories: {
     id: string;
     name: string;
     shortName: string;
     approved: number;
+    approvedClm: number;
+    approvedMnt: number;
     rejected: number;
+    rejectedClm: number;
+    rejectedMnt: number;
     byType: Record<string, number>;
+    byTypeClm: Record<string, number>;
+    byTypeMnt: Record<string, number>;
     medianDays: number | null;
+    medianDaysClm: number | null;
+    medianDaysMnt: number | null;
     waitingCount: number;
+    waitingCountClm: number;
+    waitingCountMnt: number;
     medianWaitDays: number | null;
+    medianWaitDaysClm: number | null;
+    medianWaitDaysMnt: number | null;
     oldestWaitDays: number | null;
+    oldestWaitDaysClm: number | null;
+    oldestWaitDaysMnt: number | null;
   }[];
   weeks: FactoryWeekPoint[];
   approvals: FactoryOutcomeRow[];
@@ -312,14 +343,31 @@ function addDays(ymd: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-async function listWaitingByFactory(): Promise<Map<string, number[]>> {
+function caseKind(taskType: string, taskNumber: string): FactoryCaseKind {
+  if (taskType === "repair" || taskNumber.startsWith("MNT-")) return "mnt";
+  return "clm";
+}
+
+function emptyCompTypes(): Record<string, number> {
+  return { cost_refund: 0, spare_parts: 0, deduce: 0, replacement: 0 };
+}
+
+function waitSummary(values: number[]): { count: number; medianDays: number | null; oldestDays: number | null } {
+  return {
+    count: values.length,
+    medianDays: median(values),
+    oldestDays: values.length > 0 ? Math.max(...values) : null,
+  };
+}
+
+async function listWaitingByFactory(): Promise<Map<string, { clm: number[]; mnt: number[] }>> {
   const today = bangkokDate();
   const yearFrom = `${today.slice(0, 4)}-01-01`;
   const opened = `date(datetime(t.timestamp / 1000, 'unixepoch', '+7 hours'))`;
   const days = sqlDaysToRepairExpr();
   const result = await getDb().execute({
     sql: `
-      SELECT m.supplier_name, ${opened} AS opened_on
+      SELECT m.supplier_name, t.task_type, t.task_number, ${opened} AS opened_on
       FROM tasks t
       JOIN task_details td ON td.task_id = t.id
       JOIN po_case_matches m ON m.task_id = t.id
@@ -342,14 +390,18 @@ async function listWaitingByFactory(): Promise<Map<string, number[]>> {
     `,
     args: [yearFrom, today],
   });
-  const byFactory = new Map<string, number[]>();
+  const byFactory = new Map<string, { clm: number[]; mnt: number[] }>();
   for (const raw of result.rows) {
     const record = raw as Record<string, unknown>;
     const factoryId = matchFactoryId(record.supplier_name != null ? String(record.supplier_name) : null);
     const openedOn = record.opened_on != null ? String(record.opened_on) : "";
     if (!factoryId || !openedOn) continue;
-    const waits = byFactory.get(factoryId) ?? [];
-    waits.push(daysBetween(visibleOn(openedOn), today));
+    const waits = byFactory.get(factoryId) ?? { clm: [], mnt: [] };
+    const kind = caseKind(
+      record.task_type != null ? String(record.task_type) : "",
+      record.task_number != null ? String(record.task_number) : ""
+    );
+    waits[kind].push(daysBetween(visibleOn(openedOn), today));
     byFactory.set(factoryId, waits);
   }
   return byFactory;
@@ -360,7 +412,7 @@ export async function listFactoryPortalInsights(): Promise<FactoryPortalInsights
   const db = getDb();
   const result = await db.execute(`
     SELECT d.task_id, d.task_number, d.factory_id, f.name AS factory_name, d.decision, d.comp_type,
-           d.amount, d.note, d.reason, d.status, d.submitted_at, t.timestamp
+           d.amount, d.note, d.reason, d.status, d.submitted_at, t.timestamp, t.task_type
     FROM factory_portal_decisions d
     JOIN factory_portal_factories f ON f.id = d.factory_id
     LEFT JOIN tasks t ON t.id = d.task_id
@@ -378,9 +430,11 @@ export async function listFactoryPortalInsights(): Promise<FactoryPortalInsights
     const decision = String(record.decision ?? "") === "rejected" ? "rejected" : "approved";
     const opened = record.timestamp != null ? bangkokYmd(Number(record.timestamp)) : null;
     const visible = opened ? visibleOn(opened) : null;
+    const taskNumber = String(record.task_number ?? "");
     rows.push({
       taskId: String(record.task_id ?? ""),
-      taskNumber: String(record.task_number ?? ""),
+      taskNumber,
+      kind: caseKind(record.task_type != null ? String(record.task_type) : "", taskNumber),
       factoryId: String(record.factory_id ?? ""),
       factoryName: String(record.factory_name ?? ""),
       decision,
@@ -397,34 +451,60 @@ export async function listFactoryPortalInsights(): Promise<FactoryPortalInsights
   const waiting = await listWaitingByFactory();
   const factories = FACTORIES.map((factory) => {
     const mine = rows.filter((row) => row.factoryId === factory.id);
-    const pending = waiting.get(factory.id) ?? [];
-    const byType: Record<string, number> = { cost_refund: 0, spare_parts: 0, deduce: 0, replacement: 0 };
+    const pending = waiting.get(factory.id) ?? { clm: [], mnt: [] };
+    const byType = emptyCompTypes();
+    const byTypeClm = emptyCompTypes();
+    const byTypeMnt = emptyCompTypes();
     for (const row of mine) {
-      if (row.decision === "approved" && row.compType && byType[row.compType] != null) byType[row.compType] += 1;
+      if (row.decision !== "approved" || !row.compType) continue;
+      if (byType[row.compType] != null) byType[row.compType] += 1;
+      const split = row.kind === "mnt" ? byTypeMnt : byTypeClm;
+      if (split[row.compType] != null) split[row.compType] += 1;
     }
+    const clmWait = waitSummary(pending.clm);
+    const mntWait = waitSummary(pending.mnt);
+    const allWait = [...pending.clm, ...pending.mnt];
+    const replyDays = (kind?: FactoryCaseKind) =>
+      mine.flatMap((row) => (row.daysToReply == null || (kind && row.kind !== kind) ? [] : [row.daysToReply]));
+    const countDecision = (decision: "approved" | "rejected", kind?: FactoryCaseKind) =>
+      mine.filter((row) => row.decision === decision && (!kind || row.kind === kind)).length;
     return {
       id: factory.id,
       name: factory.name,
       shortName: SHORT_NAME[factory.id] ?? factory.name,
-      approved: mine.filter((row) => row.decision === "approved").length,
-      rejected: mine.filter((row) => row.decision === "rejected").length,
+      approved: countDecision("approved"),
+      approvedClm: countDecision("approved", "clm"),
+      approvedMnt: countDecision("approved", "mnt"),
+      rejected: countDecision("rejected"),
+      rejectedClm: countDecision("rejected", "clm"),
+      rejectedMnt: countDecision("rejected", "mnt"),
       byType,
-      medianDays: median(mine.flatMap((row) => (row.daysToReply == null ? [] : [row.daysToReply]))),
-      waitingCount: pending.length,
-      medianWaitDays: median(pending),
-      oldestWaitDays: pending.length > 0 ? Math.max(...pending) : null,
+      byTypeClm,
+      byTypeMnt,
+      medianDays: median(replyDays()),
+      medianDaysClm: median(replyDays("clm")),
+      medianDaysMnt: median(replyDays("mnt")),
+      waitingCount: allWait.length,
+      waitingCountClm: clmWait.count,
+      waitingCountMnt: mntWait.count,
+      medianWaitDays: median(allWait),
+      medianWaitDaysClm: clmWait.medianDays,
+      medianWaitDaysMnt: mntWait.medianDays,
+      oldestWaitDays: allWait.length > 0 ? Math.max(...allWait) : null,
+      oldestWaitDaysClm: clmWait.oldestDays,
+      oldestWaitDaysMnt: mntWait.oldestDays,
     };
   });
 
-  const weekKeys = new Map<string, Map<string, number[]>>();
+  const weekKeys = new Map<string, Map<string, { clm: number[]; mnt: number[] }>>();
   for (const row of rows) {
     if (row.daysToReply == null) continue;
     const start = weekStart(bangkokYmd(row.submittedAt) ?? "");
     if (!weekKeys.has(start)) weekKeys.set(start, new Map());
     const bucket = weekKeys.get(start);
     if (!bucket) continue;
-    const list = bucket.get(row.factoryId) ?? [];
-    list.push(row.daysToReply);
+    const list = bucket.get(row.factoryId) ?? { clm: [], mnt: [] };
+    list[row.kind].push(row.daysToReply);
     bucket.set(row.factoryId, list);
   }
 
@@ -437,35 +517,56 @@ export async function listFactoryPortalInsights(): Promise<FactoryPortalInsights
   }
 
   const weeks: FactoryWeekPoint[] = filled.map((start) => {
-    const bucket = weekKeys.get(start) ?? new Map<string, number[]>();
+    const bucket = weekKeys.get(start) ?? new Map<string, { clm: number[]; mnt: number[] }>();
     const byFactory: FactoryWeekPoint["byFactory"] = {};
     for (const factory of FACTORIES) {
-      const values = bucket.get(factory.id) ?? [];
-      byFactory[factory.id] = { medianDays: median(values), count: values.length };
+      const values = bucket.get(factory.id) ?? { clm: [], mnt: [] };
+      const all = [...values.clm, ...values.mnt];
+      byFactory[factory.id] = {
+        medianDays: median(all),
+        count: all.length,
+        clm: { medianDays: median(values.clm), count: values.clm.length },
+        mnt: { medianDays: median(values.mnt), count: values.mnt.length },
+      };
     }
     return { weekStart: start, label: weekLabel(start), byFactory };
   });
 
-  const timed = rows.flatMap((row) => (row.daysToReply == null ? [] : [row.daysToReply]));
+  const timed = (kind?: FactoryCaseKind) =>
+    rows.flatMap((row) => (row.daysToReply == null || (kind && row.kind !== kind) ? [] : [row.daysToReply]));
   const latest = weeks.length > 0 ? weeks[weeks.length - 1] : null;
   const previous = weeks.length > 1 ? weeks[weeks.length - 2] : null;
-  const weekMedian = (point: FactoryWeekPoint | null): number | null => {
+  const weekMedian = (point: FactoryWeekPoint | null, kind?: FactoryCaseKind): number | null => {
     if (!point) return null;
     const values = rows.flatMap((row) => {
-      if (row.daysToReply == null) return [];
+      if (row.daysToReply == null || (kind && row.kind !== kind)) return [];
       const start = weekStart(bangkokYmd(row.submittedAt) ?? "");
       return start === point.weekStart ? [row.daysToReply] : [];
     });
     return median(values);
   };
+  const countDecision = (decision: "approved" | "rejected", kind?: FactoryCaseKind) =>
+    rows.filter((row) => row.decision === decision && (!kind || row.kind === kind)).length;
 
   return {
     replies: rows.length,
-    approved: rows.filter((row) => row.decision === "approved").length,
-    rejected: rows.filter((row) => row.decision === "rejected").length,
-    medianDays: median(timed),
+    repliesClm: rows.filter((row) => row.kind === "clm").length,
+    repliesMnt: rows.filter((row) => row.kind === "mnt").length,
+    approved: countDecision("approved"),
+    approvedClm: countDecision("approved", "clm"),
+    approvedMnt: countDecision("approved", "mnt"),
+    rejected: countDecision("rejected"),
+    rejectedClm: countDecision("rejected", "clm"),
+    rejectedMnt: countDecision("rejected", "mnt"),
+    medianDays: median(timed()),
+    medianDaysClm: median(timed("clm")),
+    medianDaysMnt: median(timed("mnt")),
     latestMedianDays: weekMedian(latest),
+    latestMedianDaysClm: weekMedian(latest, "clm"),
+    latestMedianDaysMnt: weekMedian(latest, "mnt"),
     previousMedianDays: weekMedian(previous),
+    previousMedianDaysClm: weekMedian(previous, "clm"),
+    previousMedianDaysMnt: weekMedian(previous, "mnt"),
     factories,
     weeks,
     approvals: rows.filter((row) => row.decision === "approved"),
