@@ -159,8 +159,8 @@ export function CaseBoard({
     const payload: Record<string, unknown> = { token, taskId: row.id, decision };
     if (decision === "approved") {
       const parsed = Number(amount);
-      if (!Number.isFinite(parsed) || parsed < 0) {
-        setError("Enter a valid amount in THB. Use 0 if there is no cash amount.");
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        setError("Enter an amount greater than 0 THB. Free parts and replacement units still need a value.");
         return;
       }
       payload.compType = compType;

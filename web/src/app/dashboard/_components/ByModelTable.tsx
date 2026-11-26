@@ -206,8 +206,6 @@ export function ByModelTable({
               <th className="px-4 py-3 font-medium text-slate-700">อาการหลัก</th>
               <th className="px-4 py-3 font-medium text-slate-700">เดือนที่มีปัญหามากสุด</th>
               <th className="px-4 py-3 font-medium text-slate-700">ความเสี่ยง</th>
-              <th className="px-4 py-3 font-medium text-slate-700">ยอดเคลมได้ (฿)</th>
-              <th className="px-4 py-3 font-medium text-slate-700">Export</th>
             </tr>
           </thead>
           <tbody>
@@ -250,38 +248,6 @@ export function ByModelTable({
                   >
                     {riskLabel(r)}
                   </Badge>
-                </td>
-                <td className="px-4 py-2">
-                  {compBySku?.[r.sku] ? (
-                    <div className="text-right">
-                      <span className="font-medium text-green-700">
-                        {formatThaiNumber(compBySku[r.sku].total_amount)}
-                      </span>
-                      <div className="text-[10px] text-slate-400">
-                        {compBySku[r.sku].compensated_tasks}/{r.total} งาน
-                      </div>
-                    </div>
-                  ) : (
-                    <span className="text-xs text-slate-400">-</span>
-                  )}
-                </td>
-                <td className="px-4 py-2">
-                  <div className="flex flex-col gap-1">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => openDialog(r.sku, "excel")}
-                    >
-                      Export Excel
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => openDialog(r.sku, "video")}
-                    >
-                      Export วิดีโอ
-                    </Button>
-                  </div>
                 </td>
               </tr>
             ))}

@@ -88,9 +88,8 @@ export async function getClaimTracking(monthRaw?: string | null): Promise<ClaimT
       FROM tasks t
       LEFT JOIN task_details td ON td.task_id = t.id
       LEFT JOIN (
-        SELECT bt.task_id, SUM(b.amount) as recorded_amount
+        SELECT bt.task_id, SUM(COALESCE(bt.amount_per_task, 0)) as recorded_amount
         FROM claim_comp_batch_tasks bt
-        JOIN claim_comp_batches b ON b.id = bt.batch_id
         GROUP BY bt.task_id
       ) bt ON bt.task_id = t.id
       LEFT JOIN po_case_matches m ON m.task_id = t.id
@@ -140,18 +139,14 @@ export async function getClaimTracking(monthRaw?: string | null): Promise<ClaimT
 
   const recorded = await db.execute({
     sql: `
-      SELECT COALESCE(SUM(b.amount), 0) as amt
-      FROM claim_comp_batches b
-      WHERE b.id IN (
-        SELECT DISTINCT bt.batch_id
-        FROM claim_comp_batch_tasks bt
-        JOIN tasks t ON t.id = bt.task_id
-        JOIN task_details td ON td.task_id = t.id
-        WHERE ${SQL_NOT_VOIDED}
-          AND ${sqlInWarranty()}
-          AND ${skuFilter.sql}
-          AND ${monthExpr} = ?
-      )
+      SELECT COALESCE(SUM(COALESCE(bt.amount_per_task, 0)), 0) as amt
+      FROM claim_comp_batch_tasks bt
+      JOIN tasks t ON t.id = bt.task_id
+      JOIN task_details td ON td.task_id = t.id
+      WHERE ${SQL_NOT_VOIDED}
+        AND ${sqlInWarranty()}
+        AND ${skuFilter.sql}
+        AND ${monthExpr} = ?
     `,
     args: [...skuFilter.args, month],
   });

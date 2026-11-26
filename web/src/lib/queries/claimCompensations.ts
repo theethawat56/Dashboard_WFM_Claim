@@ -35,6 +35,22 @@ async function ensureTables() {
   await ensureNewColumns();
   const db = getDb();
   for (const sql of ENSURE_TABLES_SQL) await db.execute(sql);
+  const info = await db.execute(`PRAGMA table_info(claim_comp_batch_tasks)`);
+  const hasShare = info.rows.some((row) => String((row as Record<string, unknown>).name) === "amount_per_task");
+  if (!hasShare) {
+    await db.execute(`ALTER TABLE claim_comp_batch_tasks ADD COLUMN amount_per_task REAL`);
+  }
+  await db.execute(`
+    UPDATE claim_comp_batch_tasks
+    SET amount_per_task = (
+      SELECT b.amount * 1.0 / NULLIF((
+        SELECT COUNT(*) FROM claim_comp_batch_tasks c WHERE c.batch_id = claim_comp_batch_tasks.batch_id
+      ), 0)
+      FROM claim_comp_batches b
+      WHERE b.id = claim_comp_batch_tasks.batch_id
+    )
+    WHERE amount_per_task IS NULL
+  `);
   tablesEnsured = true;
 }
 
@@ -58,11 +74,12 @@ export async function insertBatch(data: {
     args: [data.sku, data.comp_type, data.amount, data.note],
   });
   const batchId = Number(r.lastInsertRowid ?? 0);
+  const share = data.tasks.length > 0 ? data.amount / data.tasks.length : 0;
 
   for (const t of data.tasks) {
     await db.execute({
-      sql: `INSERT INTO claim_comp_batch_tasks (batch_id, task_id, task_number) VALUES (?, ?, ?)`,
-      args: [batchId, t.task_id, t.task_number],
+      sql: `INSERT INTO claim_comp_batch_tasks (batch_id, task_id, task_number, amount_per_task) VALUES (?, ?, ?, ?)`,
+      args: [batchId, t.task_id, t.task_number, share],
     });
   }
   return batchId;
@@ -122,7 +139,7 @@ export async function getCompensatedTaskNumbers(): Promise<Map<string, number>> 
   const db = getDb();
   const r = await db.execute({
     sql: `
-      SELECT bt.task_number, SUM(b.amount) as total
+      SELECT bt.task_number, SUM(COALESCE(bt.amount_per_task, 0)) as total
       FROM claim_comp_batch_tasks bt
       JOIN claim_comp_batches b ON b.id = bt.batch_id
       GROUP BY bt.task_number
@@ -222,13 +239,17 @@ export async function getCompOverall(): Promise<ClaimCompOverall> {
     db.execute({
       sql: `
         SELECT
-          COALESCE(SUM(amount), 0) as total_amount,
-          COALESCE(SUM(CASE WHEN comp_type = 'cost_refund'  THEN amount ELSE 0 END), 0) as cost_refund,
-          COALESCE(SUM(CASE WHEN comp_type = 'spare_parts'  THEN amount ELSE 0 END), 0) as spare_parts,
-          COALESCE(SUM(CASE WHEN comp_type = 'deduce'       THEN amount ELSE 0 END), 0) as deduce,
-          COALESCE(SUM(CASE WHEN comp_type = 'replacement'  THEN amount ELSE 0 END), 0) as replacement
-        FROM claim_comp_batches b
-        WHERE ${sqlBatchHasInWarrantyTask("b.id")}
+          COALESCE(SUM(COALESCE(bt.amount_per_task, 0)), 0) as total_amount,
+          COALESCE(SUM(CASE WHEN b.comp_type = 'cost_refund' THEN COALESCE(bt.amount_per_task, 0) ELSE 0 END), 0) as cost_refund,
+          COALESCE(SUM(CASE WHEN b.comp_type = 'spare_parts' THEN COALESCE(bt.amount_per_task, 0) ELSE 0 END), 0) as spare_parts,
+          COALESCE(SUM(CASE WHEN b.comp_type = 'deduce' THEN COALESCE(bt.amount_per_task, 0) ELSE 0 END), 0) as deduce,
+          COALESCE(SUM(CASE WHEN b.comp_type = 'replacement' THEN COALESCE(bt.amount_per_task, 0) ELSE 0 END), 0) as replacement
+        FROM claim_comp_batch_tasks bt
+        JOIN claim_comp_batches b ON b.id = bt.batch_id
+        JOIN tasks t ON t.id = bt.task_id
+        JOIN task_details td ON td.task_id = t.id
+        WHERE ${SQL_NOT_VOIDED}
+          AND ${sqlInWarranty()}
       `,
       args: [],
     }),

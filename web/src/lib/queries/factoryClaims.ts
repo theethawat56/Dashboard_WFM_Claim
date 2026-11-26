@@ -3,7 +3,7 @@ import { ensureNewColumns } from "../migrate";
 import { resolveFactorySkus, skuInSql } from "../factoryClaimSkus";
 import { ensureClaimCompTables } from "./claimCompensations";
 import { SQL_NOT_VOIDED } from "../taskStatus";
-import { sqlBatchHasInWarrantyTask, sqlDaysToRepairExpr, sqlInWarranty } from "../warrantyBuffer";
+import { sqlDaysToRepairExpr, sqlInWarranty } from "../warrantyBuffer";
 import type {
   FactoryClaimKpis,
   FactoryMatchRow,
@@ -181,11 +181,18 @@ export async function getFactoryKpis(
   const damageRow = (damage.rows[0] ?? {}) as { damage_clm?: number; damage_mnt?: number };
   const damageTotal = Number(damageRow.damage_clm ?? 0);
   const damageMnt = Number(damageRow.damage_mnt ?? 0);
-  const resultRes = await db.execute(
-    `SELECT COALESCE(SUM(b.amount), 0) as result_total
-     FROM claim_comp_batches b
-     WHERE ${sqlBatchHasInWarrantyTask("b.id")}`
-  );
+  const resultRes = await db.execute({
+    sql: `
+      SELECT COALESCE(SUM(COALESCE(bt.amount_per_task, 0)), 0) as result_total
+      FROM claim_comp_batch_tasks bt
+      JOIN tasks t ON t.id = bt.task_id
+      JOIN task_details td ON td.task_id = t.id
+      JOIN po_case_matches m ON m.task_id = t.id
+      WHERE ${damageWhere.join(" AND ")}
+        AND m.task_type = 'claim'
+    `,
+    args: damageArgs,
+  });
   const resultTotal = Number(
     (resultRes.rows[0] as { result_total?: number })?.result_total ?? 0
   );

@@ -141,8 +141,6 @@ export function ClaimTrackingTab() {
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Kpi title="งานเดือนนี้" value={kpis ? num(kpis.total) : "—"} hint={monthLabel(month)} />
-        <Kpi title="อยู่ในประกัน" value={kpis ? num(kpis.in_warranty) : "—"} hint="≤ 365 วัน / รวมวันติดลบ" />
-        <Kpi title="นอกประกัน" value={kpis ? num(kpis.out_warranty) : "—"} hint={kpis ? `ไม่มีวันประกัน ${num(kpis.unknown_warranty)}` : ""} />
         <Kpi title="ปิดงานแล้ว" value={kpis ? num(kpis.closed) : "—"} hint={kpis ? `ยังเปิด ${num(kpis.total - kpis.closed)}` : ""} />
         <Kpi title="เคลมโรงงานแล้ว" value={kpis ? num(kpis.factory_recorded) : "—"} hint="บันทึกผลเคลมแล้ว" />
         <Kpi
@@ -180,9 +178,6 @@ export function ClaimTrackingTab() {
         {(
           [
             ["all", `ทั้งหมด (${kpis?.total ?? 0})`],
-            ["in", `ในประกัน (${kpis?.in_warranty ?? 0})`],
-            ["out", `นอกประกัน (${kpis?.out_warranty ?? 0})`],
-            ["unknown", `ไม่มีวันประกัน (${kpis?.unknown_warranty ?? 0})`],
             ["closed", `ปิดงาน (${kpis?.closed ?? 0})`],
             ["open", `ยังเปิด (${kpis ? kpis.total - kpis.closed : 0})`],
             ["missing_serial", `ไม่มี S/N (${kpis?.missing_serial ?? 0})`],

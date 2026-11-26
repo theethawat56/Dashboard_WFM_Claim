@@ -4,16 +4,18 @@ import { ensureNewColumns } from "../migrate";
 import { isTaskClosed, SQL_NOT_VOIDED } from "../taskStatus";
 import { sqlDaysToRepairExpr, sqlInWarranty } from "../warrantyBuffer";
 import { ensureClaimCompTables } from "./claimCompensations";
+import { SQL_REAL_SERIAL, syncFactorySentMarks } from "./factorySent";
 import type { FactoryClaimQueueData, FactoryClaimQueueRow } from "@/types/dashboard";
 
 const ROW_LIMIT = 200;
 
-const MISSING_SERIAL_SQL = `LOWER(TRIM(COALESCE(td.product_serial, ''))) IN ('', '-', 'n/a', 'none', 'null')`;
+const MISSING_SERIAL_SQL = `NOT (${SQL_REAL_SERIAL})`;
 const MISSING_SYMPTOM_SQL = `TRIM(COALESCE(td.issue_group, '')) = '' AND TRIM(COALESCE(td.issue_description, '')) = ''`;
 
 export async function getFactoryClaimQueue(): Promise<FactoryClaimQueueData> {
   await ensureNewColumns();
   await ensureClaimCompTables();
+  await syncFactorySentMarks();
   const db = getDb();
   const skuFilter = skuInSql("td.sku", resolveFactorySkus(null));
   const daysExpr = `(${sqlDaysToRepairExpr()})`;
@@ -24,6 +26,7 @@ export async function getFactoryClaimQueue(): Promise<FactoryClaimQueueData> {
     LEFT JOIN (
       SELECT task_id FROM claim_comp_batch_tasks GROUP BY task_id
     ) bt ON bt.task_id = t.id
+    LEFT JOIN factory_submissions fs ON fs.task_id = t.id
     WHERE ${SQL_NOT_VOIDED}
       AND ${skuFilter.sql}
       AND ${inWarranty}
@@ -32,22 +35,22 @@ export async function getFactoryClaimQueue(): Promise<FactoryClaimQueueData> {
   const counts = await db.execute({
     sql: `
       SELECT
-        SUM(CASE WHEN bt.task_id IS NULL THEN 1 ELSE 0 END) as pending_count,
-        SUM(CASE WHEN bt.task_id IS NULL AND t.task_type = 'claim' THEN 1 ELSE 0 END) as pending_clm,
-        SUM(CASE WHEN bt.task_id IS NULL AND t.task_type = 'repair' THEN 1 ELSE 0 END) as pending_mnt,
+        SUM(CASE WHEN bt.task_id IS NULL AND fs.task_id IS NULL THEN 1 ELSE 0 END) as pending_count,
+        SUM(CASE WHEN bt.task_id IS NULL AND fs.task_id IS NULL AND t.task_type = 'claim' THEN 1 ELSE 0 END) as pending_clm,
+        SUM(CASE WHEN bt.task_id IS NULL AND fs.task_id IS NULL AND t.task_type = 'repair' THEN 1 ELSE 0 END) as pending_mnt,
         SUM(CASE WHEN bt.task_id IS NOT NULL THEN 1 ELSE 0 END) as claimed_count,
         SUM(CASE WHEN bt.task_id IS NOT NULL AND t.task_type = 'claim' THEN 1 ELSE 0 END) as claimed_clm,
         SUM(CASE WHEN bt.task_id IS NOT NULL AND t.task_type = 'repair' THEN 1 ELSE 0 END) as claimed_mnt,
         SUM(CASE
-          WHEN bt.task_id IS NULL AND NOT (${MISSING_SERIAL_SQL}) AND NOT (${MISSING_SYMPTOM_SQL}) THEN 1
+          WHEN bt.task_id IS NULL AND fs.task_id IS NULL AND NOT (${MISSING_SERIAL_SQL}) AND NOT (${MISSING_SYMPTOM_SQL}) THEN 1
           ELSE 0
         END) as ready_count,
         SUM(CASE
-          WHEN bt.task_id IS NULL AND t.task_type = 'claim' AND NOT (${MISSING_SERIAL_SQL}) AND NOT (${MISSING_SYMPTOM_SQL}) THEN 1
+          WHEN bt.task_id IS NULL AND fs.task_id IS NULL AND t.task_type = 'claim' AND NOT (${MISSING_SERIAL_SQL}) AND NOT (${MISSING_SYMPTOM_SQL}) THEN 1
           ELSE 0
         END) as ready_clm,
         SUM(CASE
-          WHEN bt.task_id IS NULL AND t.task_type = 'repair' AND NOT (${MISSING_SERIAL_SQL}) AND NOT (${MISSING_SYMPTOM_SQL}) THEN 1
+          WHEN bt.task_id IS NULL AND fs.task_id IS NULL AND t.task_type = 'repair' AND NOT (${MISSING_SERIAL_SQL}) AND NOT (${MISSING_SYMPTOM_SQL}) THEN 1
           ELSE 0
         END) as ready_mnt
       ${baseFrom}
@@ -80,6 +83,7 @@ export async function getFactoryClaimQueue(): Promise<FactoryClaimQueueData> {
         ${daysExpr} as days_from_register
       ${baseFrom}
         AND bt.task_id IS NULL
+        AND fs.task_id IS NULL
         AND t.task_type = ?
       ORDER BY ${daysExpr} DESC, t.timestamp ASC, t.task_number ASC
       LIMIT ${ROW_LIMIT}
@@ -137,6 +141,6 @@ export async function getFactoryClaimQueue(): Promise<FactoryClaimQueueData> {
 }
 
 function isBlankSerial(value: string | null): boolean {
-  const t = (value ?? "").trim().toLowerCase();
-  return t === "" || t === "-" || t === "n/a" || t === "none" || t === "null";
+  const compact = (value ?? "").trim().toLowerCase().replace(/[- ./]/g, "");
+  return compact.length < 5;
 }

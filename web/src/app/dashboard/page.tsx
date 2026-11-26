@@ -23,6 +23,8 @@ import { FactoryPortalInsightsCard } from "./_components/FactoryPortalInsightsCa
 import { FactoryCompareCard } from "./_components/FactoryCompareCard";
 import { FactoryOpenMonthCard } from "./_components/FactoryOpenMonthCard";
 import { ModelFactoryStatusCard } from "./_components/ModelFactoryStatusCard";
+import { SkuFactoryMapCard } from "./_components/SkuFactoryMapCard";
+import { WeeklyKpiRow } from "./_components/WeeklyKpiRow";
 import { ClaimedModelsCard } from "./_components/ClaimedModelsCard";
 import type { DailyTrendRow, DailyTopSkuRow, ClaimCompOverall, ClaimedModelRow } from "@/types/dashboard";
 import { FilterBar } from "./_components/FilterBar";
@@ -72,8 +74,9 @@ export default function DashboardPage() {
   const [endingDay, setEndingDay] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<
-    "overview" | "bymodel" | "tasks" | "evidence" | "claims" | "factory" | "tracking"
+    "overview" | "queue" | "bymodel" | "tasks" | "evidence" | "claims"
   >("overview");
+  const [kpiView, setKpiView] = useState<"factory" | "month" | "model">("factory");
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [trend, setTrend] = useState<{ month: string; repair_count: number; claim_count: number; reclaim_count: number; total: number }[]>([]);
   const [symptoms, setSymptoms] = useState<{ issue_group: string; frequency: number; related_skus: string | null }[]>([]);
@@ -622,6 +625,14 @@ export default function DashboardPage() {
             <Button
               size="sm"
               variant="outline"
+              onClick={() => setActiveTab("tasks")}
+              className="whitespace-nowrap"
+            >
+              ค้นหางาน
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
               disabled={endingDay}
               onClick={() => {
                 endDay().catch(() => undefined);
@@ -687,149 +698,41 @@ export default function DashboardPage() {
           className="w-full"
         >
           <TabsList className="mb-4 w-full justify-start overflow-x-auto">
-            <TabsTrigger value="overview">ภาพรวม</TabsTrigger>
-            <TabsTrigger value="bymodel">แยกตามรุ่น</TabsTrigger>
-            <TabsTrigger value="tasks">รายการงาน</TabsTrigger>
+            <TabsTrigger value="overview">KPI</TabsTrigger>
+            <TabsTrigger value="queue">คิวเคลม</TabsTrigger>
             <TabsTrigger value="claims">ผลเคลม</TabsTrigger>
-            <TabsTrigger value="tracking">ตามเคลม</TabsTrigger>
-            <TabsTrigger value="factory">เคลมโรงงาน</TabsTrigger>
+            <TabsTrigger value="bymodel">รุ่นและคุณภาพ</TabsTrigger>
             <TabsTrigger value="evidence">หลักฐานต่อรอง</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
-            <FactoryCompareCard />
-            <FactoryOpenMonthCard />
-            <ModelFactoryStatusCard />
-            <FactoryClaimQueueCard onOpenTracking={() => setActiveTab("tracking")} />
-            <KpiCards data={summary} />
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">
-                  สินค้า Top 5 ที่มีอัตราซ่อม/เคลมสูงสุดย้อนหลัง 7 วัน
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <DailyTopSkusCard
-                  data={dailyTopSkus}
-                  date={topSkuDate}
-                  onDateChange={setTopSkuDate}
-                />
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">
-                  สรุปผลเคลมจากโรงงาน
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ClaimSummaryCard data={compOverall} />
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">
-                  รายงาน Claimed with Factory (งานที่เลือก)
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {claimedTasks.length === 0 ? (
-                  <p className="text-sm text-slate-600">
-                    ไปที่แท็บ <span className="font-medium">รายการงาน</span> แล้วกดปุ่ม{" "}
-                    <span className="font-medium">Claimed</span> เพื่อเลือกงานที่ต้องการ จากนั้นกดปุ่ม{" "}
-                    <span className="font-medium">สร้างรายงาน</span> เพื่อแสดงบนหน้านี้
-                  </p>
-                ) : (
-                  <>
-                    <div className="flex flex-wrap gap-3 text-sm text-slate-700">
-                      <span>
-                        งานที่เลือก: <b>{claimedReport.total}</b> รายการ
-                      </span>
-                      <span>
-                        เคลมซ้ำ: <b>{claimedReport.reclaimCount}</b> รายการ
-                      </span>
-                      <span>
-                        ซ่อมแล้วไม่หาย: <b>{claimedReport.unfixedCount}</b> รายการ
-                      </span>
-                      <span>
-                        จำนวน SKU: <b>{claimedReport.uniqueSkuCount}</b>
-                      </span>
-                    </div>
-                    {claimedReport.topIssueGroup && (
-                      <p className="text-sm text-slate-600">
-                        อาการที่พบมากที่สุด:{" "}
-                        <span className="font-medium">{claimedReport.topIssueGroup}</span>
-                      </p>
-                    )}
-                    {claimedTasks.length > 0 && (
-                      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-                        <table className="w-full text-left text-sm">
-                          <thead className="border-b border-slate-200 bg-slate-50">
-                            <tr>
-                              <th className="px-3 py-2 font-medium text-slate-700">เลขงาน</th>
-                              <th className="px-3 py-2 font-medium text-slate-700">SKU</th>
-                              <th className="px-3 py-2 font-medium text-slate-700">รุ่น</th>
-                              <th className="px-3 py-2 font-medium text-slate-700">Serial</th>
-                              <th className="px-3 py-2 font-medium text-slate-700">อาการ</th>
-                              <th className="px-3 py-2 font-medium text-slate-700">วันที่</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {claimedTasks
-                              .slice()
-                              .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
-                              .slice(0, 50)
-                              .map((t) => (
-                                <tr
-                                  key={t.task_number}
-                                  className="border-b border-slate-100 hover:bg-slate-50"
-                                >
-                                  <td className="px-3 py-2 font-mono text-slate-800">
-                                    {t.task_number}
-                                  </td>
-                                  <td className="px-3 py-2 font-mono text-slate-700">
-                                    {t.sku ?? "-"}
-                                  </td>
-                                  <td className="px-3 py-2 text-slate-700">
-                                    {t.product_model ?? "-"}
-                                  </td>
-                                  <td className="px-3 py-2 text-slate-700">
-                                    {t.product_serial ?? "-"}
-                                  </td>
-                                  <td className="max-w-[220px] truncate px-3 py-2 text-slate-600">
-                                    {((t.issue_description ?? t.issue_group) ?? "")
-                                      .slice(0, 60)}
-                                    {((t.issue_description ?? t.issue_group) ?? "").length >
-                                      60
-                                      ? "…"
-                                      : ""}
-                                  </td>
-                                  <td className="px-3 py-2 text-slate-600">
-                                    {t.create_date ?? "-"}
-                                  </td>
-                                </tr>
-                              ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setClaimedSelectedTaskNumbers(new Set());
-                          setClaimedSelectedTasks({});
-                        }}
-                      >
-                        ล้างการเลือก
-                      </Button>
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
+            <WeeklyKpiRow />
+            <SkuFactoryMapCard />
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  ["factory", "โรงงาน"],
+                  ["month", "เดือน"],
+                  ["model", "รุ่น"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setKpiView(id)}
+                  className={`rounded-md px-3 py-1.5 text-sm ${kpiView === id ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {kpiView === "factory" && <FactoryCompareCard />}
+            {kpiView === "month" && <FactoryOpenMonthCard />}
+            {kpiView === "model" && <ModelFactoryStatusCard />}
+          </TabsContent>
 
+          <TabsContent value="queue" className="space-y-6">
+            <FactoryClaimQueueCard onOpenTracking={() => setActiveTab("queue")} />
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">
@@ -884,17 +787,65 @@ export default function DashboardPage() {
                 )}
               </CardContent>
             </Card>
-            <div className="grid gap-6 lg:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">
-                    สรุปรุ่นที่เคลมโรงงานไปแล้ว
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ClaimedModelsCard rows={claimedModels} />
-                </CardContent>
-              </Card>
+                        <ClaimTrackingTab />
+          </TabsContent>
+
+          <TabsContent value="bymodel" className="space-y-4">
+            <FilterBar
+              searchPlaceholder="ค้นหารุ่นหรือ SKU..."
+              searchValue={modelSearch}
+              onSearchChange={setModelSearch}
+              typeOptions={TYPE_OPTIONS}
+              typeValue={modelType}
+              onTypeChange={setModelType}
+              riskOptions={RISK_OPTIONS}
+              riskValue={modelRisk}
+              onRiskChange={setModelRisk}
+              fromValue={modelDateFrom}
+              toValue={modelDateTo}
+              onFromChange={setModelDateFrom}
+              onToChange={setModelDateTo}
+              showSearch={true}
+              showType={true}
+              showPeriod={false}
+              showRisk={true}
+              showDateRange={true}
+              onReset={() => {
+                setModelSearch("");
+                setModelType("all");
+                setModelDateFrom("");
+                setModelDateTo("");
+                setModelRisk("all");
+              }}
+            />
+            <ByModelTable
+              rows={filteredByModel}
+              onExportExcel={(sku, dateFrom, dateTo) => {
+                const params = new URLSearchParams({ skus: sku });
+                if (dateFrom) params.set("dateFrom", dateFrom);
+                if (dateTo) params.set("dateTo", dateTo);
+                window.open(`/api/export/excel?${params.toString()}`, "_blank");
+              }}
+              compBySku={compBySku}
+            />
+<KpiCards data={summary} />
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">
+                  สินค้า Top 5 ที่มีอัตราซ่อม/เคลมสูงสุดย้อนหลัง 7 วัน
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <DailyTopSkusCard
+                  data={dailyTopSkus}
+                  date={topSkuDate}
+                  onDateChange={setTopSkuDate}
+                />
+              </CardContent>
+            </Card>
+            
+<div className="grid gap-6 lg:grid-cols-2">
+              
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">
@@ -944,46 +895,7 @@ export default function DashboardPage() {
                 <SymptomFrequencyChart data={symptoms} />
               </CardContent>
             </Card>
-          </TabsContent>
-
-          <TabsContent value="bymodel" className="space-y-4">
-            <FilterBar
-              searchPlaceholder="ค้นหารุ่นหรือ SKU..."
-              searchValue={modelSearch}
-              onSearchChange={setModelSearch}
-              typeOptions={TYPE_OPTIONS}
-              typeValue={modelType}
-              onTypeChange={setModelType}
-              riskOptions={RISK_OPTIONS}
-              riskValue={modelRisk}
-              onRiskChange={setModelRisk}
-              fromValue={modelDateFrom}
-              toValue={modelDateTo}
-              onFromChange={setModelDateFrom}
-              onToChange={setModelDateTo}
-              showSearch={true}
-              showType={true}
-              showPeriod={false}
-              showRisk={true}
-              showDateRange={true}
-              onReset={() => {
-                setModelSearch("");
-                setModelType("all");
-                setModelDateFrom("");
-                setModelDateTo("");
-                setModelRisk("all");
-              }}
-            />
-            <ByModelTable
-              rows={filteredByModel}
-              onExportExcel={(sku, dateFrom, dateTo) => {
-                const params = new URLSearchParams({ skus: sku });
-                if (dateFrom) params.set("dateFrom", dateFrom);
-                if (dateTo) params.set("dateTo", dateTo);
-                window.open(`/api/export/excel?${params.toString()}`, "_blank");
-              }}
-              compBySku={compBySku}
-            />
+          
           </TabsContent>
 
           <TabsContent value="tasks" className="space-y-4">
@@ -998,13 +910,6 @@ export default function DashboardPage() {
                   จำนวนงานที่เลือก: <b>{claimedTasks.length}</b> รายการ
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    disabled={claimedTasks.length === 0}
-                    onClick={() => setActiveTab("overview")}
-                  >
-                    สร้างรายงานบนหน้า ภาพรวม
-                  </Button>
                   <Button
                     size="sm"
                     variant="outline"
@@ -1095,19 +1000,12 @@ export default function DashboardPage() {
 
           <TabsContent value="claims" className="space-y-6">
             <ClaimCompTab />
-          </TabsContent>
-
-          <TabsContent value="tracking" className="space-y-6">
-            <ClaimTrackingTab />
-          </TabsContent>
-
-          <TabsContent value="factory" className="space-y-6">
             <FactoryPortalDecisionsCard />
             <FactoryPortalInsightsCard />
-            <FactoryClaimTab />
           </TabsContent>
 
           <TabsContent value="evidence" className="space-y-6">
+            <FactoryClaimTab />
             <div className="grid gap-6 lg:grid-cols-3">
               <div className="lg:col-span-1">
                 <Card>

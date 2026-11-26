@@ -5,6 +5,7 @@ import { SQL_NOT_VOIDED } from "../taskStatus";
 import { sqlInWarranty } from "../warrantyBuffer";
 import { ensureClaimCompTables } from "./claimCompensations";
 import { ensureFactorySubmissions } from "./factorySubmissions";
+import { syncFactorySentMarks } from "./factorySent";
 import type { FactorySendStatus, ModelFactoryStatusData, ModelFactoryStatusRow } from "@/types/dashboard";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -52,6 +53,7 @@ export async function getModelFactoryStatus(
 ): Promise<ModelFactoryStatusData> {
   await ensureClaimCompTables();
   await ensureFactorySubmissions();
+  await syncFactorySentMarks();
   const db = getDb();
   const range = clampToYear(fromRaw, toRaw);
   const skuFilter = skuInSql("td.sku", resolveFactorySkus(null));
@@ -67,9 +69,9 @@ export async function getModelFactoryStatus(
         SUM(CASE WHEN bt.task_id IS NULL AND fs.task_id IS NULL THEN 1 ELSE 0 END) AS not_sent,
         SUM(CASE WHEN t.task_type = 'claim' AND bt.task_id IS NULL AND fs.task_id IS NULL THEN 1 ELSE 0 END) AS not_sent_clm,
         SUM(CASE WHEN t.task_type = 'repair' AND bt.task_id IS NULL AND fs.task_id IS NULL THEN 1 ELSE 0 END) AS not_sent_mnt,
-        SUM(CASE WHEN bt.task_id IS NULL AND fs.task_id IS NOT NULL THEN 1 ELSE 0 END) AS sent_waiting,
-        SUM(CASE WHEN t.task_type = 'claim' AND bt.task_id IS NULL AND fs.task_id IS NOT NULL THEN 1 ELSE 0 END) AS sent_waiting_clm,
-        SUM(CASE WHEN t.task_type = 'repair' AND bt.task_id IS NULL AND fs.task_id IS NOT NULL THEN 1 ELSE 0 END) AS sent_waiting_mnt,
+        SUM(CASE WHEN bt.task_id IS NULL AND fs.task_id IS NOT NULL AND (d.task_id IS NULL OR d.status = 'waiting') THEN 1 ELSE 0 END) AS sent_waiting,
+        SUM(CASE WHEN t.task_type = 'claim' AND bt.task_id IS NULL AND fs.task_id IS NOT NULL AND (d.task_id IS NULL OR d.status = 'waiting') THEN 1 ELSE 0 END) AS sent_waiting_clm,
+        SUM(CASE WHEN t.task_type = 'repair' AND bt.task_id IS NULL AND fs.task_id IS NOT NULL AND (d.task_id IS NULL OR d.status = 'waiting') THEN 1 ELSE 0 END) AS sent_waiting_mnt,
         SUM(CASE WHEN bt.task_id IS NOT NULL THEN 1 ELSE 0 END) AS compensated,
         SUM(CASE WHEN t.task_type = 'claim' AND bt.task_id IS NOT NULL THEN 1 ELSE 0 END) AS compensated_clm,
         SUM(CASE WHEN t.task_type = 'repair' AND bt.task_id IS NOT NULL THEN 1 ELSE 0 END) AS compensated_mnt
@@ -79,6 +81,7 @@ export async function getModelFactoryStatus(
         SELECT task_id FROM claim_comp_batch_tasks GROUP BY task_id
       ) bt ON bt.task_id = t.id
       LEFT JOIN factory_submissions fs ON fs.task_id = t.id
+      LEFT JOIN factory_portal_decisions d ON d.task_id = t.id
       WHERE ${SQL_NOT_VOIDED}
         AND ${sqlInWarranty()}
         AND ${skuFilter.sql}

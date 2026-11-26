@@ -4,6 +4,7 @@ import { SQL_NOT_VOIDED } from "../taskStatus";
 import { sqlInWarranty } from "../warrantyBuffer";
 import { ensureClaimCompTables } from "./claimCompensations";
 import { ensureFactorySubmissions } from "./factorySubmissions";
+import { syncFactorySentMarks } from "./factorySent";
 import { thisYearBounds } from "./modelFactoryStatus";
 import type { FactoryOpenMonthData, FactoryOpenMonthRow } from "@/types/dashboard";
 
@@ -22,6 +23,7 @@ function monthsThrough(from: string, to: string): string[] {
 export async function getFactoryOpenMonths(): Promise<FactoryOpenMonthData> {
   await ensureClaimCompTables();
   await ensureFactorySubmissions();
+  await syncFactorySentMarks();
   const db = getDb();
   const range = thisYearBounds();
   const skuFilter = skuInSql("td.sku", resolveFactorySkus(null));

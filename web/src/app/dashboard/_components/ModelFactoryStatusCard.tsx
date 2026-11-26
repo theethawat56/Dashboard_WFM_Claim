@@ -107,7 +107,7 @@ export function ModelFactoryStatusCard() {
       <CardHeader className="pb-2">
         <CardTitle className="text-base">รุ่นปีนี้ที่ต้องเคลมโรงงาน</CardTitle>
         <p className="mt-1 text-sm text-slate-500">
-          เฉพาะงานปี {bounds.year} ของ SKU โรงงานที่อยู่ในประกัน นับ 1 งานเป็น 1 เครื่อง แยก CLM (เคลม) กับ MNT (ซ่อม) ในแถวเดียวกัน ส่งแล้วรอชดเชยคือกดส่งโรงงานในรายการงาน ส่วนได้ชดเชยแล้วคืองานที่บันทึกผลเคลมแล้ว
+          เฉพาะงานปี {bounds.year} ของ SKU โรงงานที่อยู่ในประกัน นับ 1 งานเป็น 1 เครื่อง แยก CLM (เคลม) กับ MNT (ซ่อม) ในแถวเดียวกัน ส่งแล้วรอชดเชยคืองานที่อยู่ในลิงก์โรงงานและยังไม่ได้รับคำตอบ ได้ชดเชยแล้วคืองานที่บันทึกผลเคลมแล้ว
         </p>
       </CardHeader>
       <CardContent className="space-y-4">

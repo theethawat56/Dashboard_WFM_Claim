@@ -389,7 +389,7 @@ async function listWaitingByFactory(): Promise<Map<string, { clm: number[]; mnt:
         AND ${opened} <= ?
         AND ${days} IS NOT NULL
         AND ${days} <= 365
-        AND LOWER(TRIM(COALESCE(td.product_serial, ''))) NOT IN ('', '-', 'n/a', 'none', 'null')
+        AND LENGTH(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(TRIM(COALESCE(td.product_serial, ''))), '-', ''), ' ', ''), '.', ''), '/', '')) >= 5
         AND NOT (
           TRIM(COALESCE(td.issue_group, '')) = ''
           AND TRIM(COALESCE(td.issue_description, '')) = ''

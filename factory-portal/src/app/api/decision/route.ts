@@ -32,8 +32,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Choose a compensation type." }, { status: 400 });
       }
       amount = Number(body.amount);
-      if (!Number.isFinite(amount) || amount < 0 || amount > 1_000_000_000) {
-        return NextResponse.json({ error: "Enter a valid amount in THB." }, { status: 400 });
+      if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000) {
+        return NextResponse.json({ error: "Enter an amount greater than 0 THB." }, { status: 400 });
       }
       note = String(body.note ?? "").trim().slice(0, 2000) || null;
     } else {

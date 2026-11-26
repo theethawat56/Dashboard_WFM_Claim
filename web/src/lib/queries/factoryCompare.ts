@@ -5,6 +5,7 @@ import { SQL_NOT_VOIDED } from "../taskStatus";
 import { sqlInWarranty } from "../warrantyBuffer";
 import { ensureClaimCompTables } from "./claimCompensations";
 import { listFactoryCatalog, matchFactoryId } from "./factoryPortalDecisions";
+import { confirmedSkuFactories } from "./skuFactoryMap";
 import type { FactoryCompareData, FactoryCompareRow } from "@/types/dashboard";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -32,6 +33,7 @@ export async function getFactoryCompare(fromRaw?: string | null, toRaw?: string 
   const result = await db.execute({
     sql: `
       SELECT
+        td.sku,
         m.supplier_name,
         t.task_type,
         CASE WHEN bt.task_id IS NULL THEN 0 ELSE 1 END AS returned
@@ -69,10 +71,18 @@ export async function getFactoryCompare(fromRaw?: string | null, toRaw?: string 
 
   for (const factory of listFactoryCatalog()) ensure(factory.id, factory.name, factory.shortName);
   ensure("unmatched", "ยังจับโรงงานไม่ได้", "ยังไม่จับได้");
+  ensure("excluded", "ตั้งใจไม่เคลมโรงงาน", "ไม่เคลม");
+  const assigned = await confirmedSkuFactories();
 
   for (const raw of result.rows) {
     const record = raw as Record<string, unknown>;
-    const factoryId = matchFactoryId(record.supplier_name != null ? String(record.supplier_name) : null) ?? "unmatched";
+    const sku = record.sku != null ? String(record.sku).trim() : "";
+    const choice = assigned.get(sku);
+    const factoryId = choice?.status === "excluded"
+      ? "excluded"
+      : choice?.status === "confirmed" && choice.factoryId
+        ? choice.factoryId
+        : matchFactoryId(record.supplier_name != null ? String(record.supplier_name) : null) ?? "unmatched";
     const row = buckets.get(factoryId) ?? ensure(factoryId, factoryId, factoryId);
     const repair = String(record.task_type ?? "") === "repair";
     const returned = Number(record.returned ?? 0) === 1;
@@ -83,7 +93,7 @@ export async function getFactoryCompare(fromRaw?: string | null, toRaw?: string 
   }
 
   const rows = [...buckets.values()]
-    .filter((row) => row.id !== "unmatched" || row.pending_clm + row.pending_mnt + row.returned_clm + row.returned_mnt > 0)
+    .filter((row) => (row.id !== "unmatched" && row.id !== "excluded") || row.pending_clm + row.pending_mnt + row.returned_clm + row.returned_mnt > 0)
     .sort((a, b) => {
       const pending = (row: FactoryCompareRow) => row.pending_clm + row.pending_mnt;
       return pending(b) - pending(a) || a.shortName.localeCompare(b.shortName);
