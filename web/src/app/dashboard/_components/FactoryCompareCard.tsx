@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { bangkokDate } from "@/lib/bangkokDate";
 import type { FactoryCompareData } from "@/types/dashboard";
+import { useDashboardFilter } from "./DashboardFilter";
 
 function num(value: number): string {
   return value.toLocaleString("th-TH");
@@ -16,20 +16,15 @@ function rate(returned: number, pending: number): string {
   return `${((returned / total) * 100).toFixed(1)}%`;
 }
 
-function yearStart(): string {
-  return `${bangkokDate().slice(0, 4)}-01-01`;
-}
-
 export function FactoryCompareCard() {
-  const [from, setFrom] = useState(yearStart);
-  const [to, setTo] = useState(bangkokDate);
+  const filter = useDashboardFilter();
   const [data, setData] = useState<FactoryCompareData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    const params = new URLSearchParams({ from, to });
+    const params = new URLSearchParams({ from: filter.from, to: filter.to });
     fetch(`/api/dashboard/factory-compare?${params}`)
       .then(async (response) => {
         if (!response.ok) throw new Error("โหลดเปรียบเทียบโรงงานไม่สำเร็จ");
@@ -44,16 +39,18 @@ export function FactoryCompareCard() {
     return () => {
       cancelled = true;
     };
-  }, [from, to]);
+  }, [filter.from, filter.to]);
 
   const chartRows = useMemo(
     () =>
-      (data?.rows ?? []).map((row) => ({
+      (data?.rows ?? [])
+        .filter((row) => filter.factory === "all" || row.id === filter.factory)
+        .map((row) => ({
         name: row.shortName,
         pending: row.pending_clm + row.pending_mnt,
         returned: row.returned_clm + row.returned_mnt,
       })),
-    [data]
+    [data, filter.factory]
   );
 
   return (
@@ -66,28 +63,6 @@ export function FactoryCompareCard() {
       </CardHeader>
       <CardContent className="space-y-4">
         {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">{error}</div>}
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="text-xs font-medium text-slate-600">
-            จากวันที่
-            <input
-              type="date"
-              value={from}
-              max={to}
-              onChange={(event) => setFrom(event.target.value)}
-              className="mt-1 block h-8 rounded-md border border-slate-300 px-2 text-sm"
-            />
-          </label>
-          <label className="text-xs font-medium text-slate-600">
-            ถึงวันที่
-            <input
-              type="date"
-              value={to}
-              min={from}
-              onChange={(event) => setTo(event.target.value)}
-              className="mt-1 block h-8 rounded-md border border-slate-300 px-2 text-sm"
-            />
-          </label>
-        </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <Stat
             label="ค้างที่ต้องไปเคลม"
@@ -134,7 +109,7 @@ export function FactoryCompareCard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(data?.rows ?? []).map((row) => {
+                  {(data?.rows ?? []).filter((row) => filter.factory === "all" || row.id === filter.factory).map((row) => {
                     const pending = row.pending_clm + row.pending_mnt;
                     const returned = row.returned_clm + row.returned_mnt;
                     return (

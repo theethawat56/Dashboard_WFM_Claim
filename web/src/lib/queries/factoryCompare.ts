@@ -4,7 +4,7 @@ import { resolveFactorySkus, skuInSql } from "../factoryClaimSkus";
 import { SQL_NOT_VOIDED } from "../taskStatus";
 import { sqlInWarranty } from "../warrantyBuffer";
 import { ensureClaimCompTables } from "./claimCompensations";
-import { listFactoryCatalog, matchFactoryId } from "./factoryPortalDecisions";
+import { listFactoryCatalog, listPortalFactories, matchFactoryId } from "./factoryPortalDecisions";
 import { confirmedSkuFactories } from "./skuFactoryMap";
 import type { FactoryCompareData, FactoryCompareRow } from "@/types/dashboard";
 
@@ -70,6 +70,10 @@ export async function getFactoryCompare(fromRaw?: string | null, toRaw?: string 
   };
 
   for (const factory of listFactoryCatalog()) ensure(factory.id, factory.name, factory.shortName);
+  for (const factory of await listPortalFactories()) {
+    const known = listFactoryCatalog().find((item) => item.id === factory.id);
+    ensure(factory.id, factory.name, known?.shortName ?? factory.name);
+  }
   ensure("unmatched", "ยังจับโรงงานไม่ได้", "ยังไม่จับได้");
   ensure("excluded", "ตั้งใจไม่เคลมโรงงาน", "ไม่เคลม");
   const assigned = await confirmedSkuFactories();

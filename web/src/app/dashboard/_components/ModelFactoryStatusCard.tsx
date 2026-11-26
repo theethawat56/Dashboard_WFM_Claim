@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { bangkokDate } from "@/lib/bangkokDate";
 import type { FactorySendStatus, ModelFactoryStatusData } from "@/types/dashboard";
+import { useDashboardFilter } from "./DashboardFilter";
 
 type StatusFilter = "all" | FactorySendStatus;
 
@@ -31,19 +31,8 @@ function formatDmy(iso: string): string {
   return `${d}/${m}/${y}`;
 }
 
-function yearBounds(): { year: number; min: string; max: string; to: string } {
-  const today = bangkokDate();
-  const year = Number(today.slice(0, 4));
-  const min = `${year}-01-01`;
-  const max = `${year}-12-31`;
-  const to = today < min ? min : today > max ? max : today;
-  return { year, min, max, to };
-}
-
 export function ModelFactoryStatusCard() {
-  const bounds = useMemo(() => yearBounds(), []);
-  const [from, setFrom] = useState(bounds.min);
-  const [to, setTo] = useState(bounds.to);
+  const filter = useDashboardFilter();
   const [data, setData] = useState<ModelFactoryStatusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,7 +44,7 @@ export function ModelFactoryStatusCard() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams({ from, to });
+    const params = new URLSearchParams({ from: filter.from, to: filter.to });
     fetch(`/api/dashboard/model-factory-status?${params}`)
       .then(async (res) => {
         if (!res.ok) throw new Error("โหลดสรุปส่งโรงงานไม่สำเร็จ");
@@ -73,7 +62,7 @@ export function ModelFactoryStatusCard() {
     return () => {
       cancelled = true;
     };
-  }, [from, to, reloadKey]);
+  }, [filter.from, filter.to, reloadKey]);
 
   useEffect(() => {
     const refresh = () => setReloadKey((value) => value + 1);
@@ -107,7 +96,7 @@ export function ModelFactoryStatusCard() {
       <CardHeader className="pb-2">
         <CardTitle className="text-base">รุ่นปีนี้ที่ต้องเคลมโรงงาน</CardTitle>
         <p className="mt-1 text-sm text-slate-500">
-          เฉพาะงานปี {bounds.year} ของ SKU โรงงานที่อยู่ในประกัน นับ 1 งานเป็น 1 เครื่อง แยก CLM (เคลม) กับ MNT (ซ่อม) ในแถวเดียวกัน ส่งแล้วรอชดเชยคืองานที่อยู่ในลิงก์โรงงานและยังไม่ได้รับคำตอบ ได้ชดเชยแล้วคืองานที่บันทึกผลเคลมแล้ว
+          ใช้ช่วงวันเปิดงานจากตัวกรองด้านบน เฉพาะ SKU โรงงานที่อยู่ในประกัน นับ 1 งานเป็น 1 เครื่อง แยก CLM กับ MNT
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -116,28 +105,6 @@ export function ModelFactoryStatusCard() {
         )}
 
         <div className="flex flex-wrap items-end gap-3">
-          <label className="text-xs font-medium text-slate-600">
-            จากวันที่
-            <input
-              type="date"
-              min={bounds.min}
-              max={bounds.max}
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              className="mt-1 block h-8 rounded-md border border-slate-300 px-2 text-sm"
-            />
-          </label>
-          <label className="text-xs font-medium text-slate-600">
-            ถึงวันที่
-            <input
-              type="date"
-              min={bounds.min}
-              max={bounds.max}
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              className="mt-1 block h-8 rounded-md border border-slate-300 px-2 text-sm"
-            />
-          </label>
           <label className="min-w-[180px] text-xs font-medium text-slate-600">
             ค้นหารุ่น
             <input

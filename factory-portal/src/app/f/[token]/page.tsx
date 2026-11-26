@@ -39,6 +39,7 @@ export default async function FactoryPage({ params }: { params: Promise<{ token:
         amount: row.amount,
         note: row.note,
         reason: row.reason,
+        replacementCost: row.replacementCost,
         files: (media.get(row.taskNumber) ?? []).map(({ kind, label }) => ({ kind, label })),
       }))}
       mediaUnavailable={mediaUnavailable}

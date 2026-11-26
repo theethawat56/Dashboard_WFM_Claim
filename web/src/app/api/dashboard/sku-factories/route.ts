@@ -17,12 +17,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const body = (await request.json()) as {
       sku?: string;
       factoryId?: string;
+      supplierName?: string;
       exclude?: boolean;
       reason?: string;
     };
     const result = await setSkuFactory({
       sku: String(body.sku ?? ""),
       factoryId: body.factoryId,
+      supplierName: body.supplierName,
       exclude: body.exclude === true,
       reason: body.reason,
     });

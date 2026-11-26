@@ -19,6 +19,7 @@ export type BoardCase = {
   amount: number | null;
   note: string | null;
   reason: string | null;
+  replacementCost: number | null;
   files: CaseMediaFile[];
 };
 
@@ -349,7 +350,13 @@ export function CaseBoard({
                           <select
                             className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-2"
                             value={compType}
-                            onChange={(event) => setCompType(event.target.value as CompType)}
+                            onChange={(event) => {
+                              const next = event.target.value as CompType;
+                              setCompType(next);
+                              if (next === "replacement") {
+                                setAmount(row.replacementCost != null ? String(row.replacementCost) : "");
+                              }
+                            }}
                           >
                             {COMP_TYPES.map((item) => (
                               <option key={item.value} value={item.value}>
@@ -361,11 +368,18 @@ export function CaseBoard({
                         <label className="block text-sm">
                           Amount (THB)
                           <input
-                            className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2"
+                            className="mt-1 w-full rounded-md border border-slate-300 px-2 py-2 disabled:bg-slate-100"
                             inputMode="decimal"
                             value={amount}
+                            readOnly={compType === "replacement"}
                             onChange={(event) => setAmount(event.target.value)}
                           />
+                          {compType === "replacement" && (
+                            <span className="mt-1 block text-xs text-slate-500">Filled from the latest PO unit cost.</span>
+                          )}
+                          {compType === "spare_parts" && (
+                            <span className="mt-1 block text-xs text-slate-500">Enter the spare-part price quoted by the factory.</span>
+                          )}
                         </label>
                         <label className="block text-sm sm:col-span-2">
                           Note

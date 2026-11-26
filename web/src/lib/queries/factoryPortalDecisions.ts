@@ -27,6 +27,55 @@ export function matchFactoryId(supplierName: string | null | undefined): string 
   return null;
 }
 
+export function factorySlug(name: string): string {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+  return slug || "supplier";
+}
+
+export async function listPortalFactories(): Promise<{ id: string; name: string; match: string; token: string }[]> {
+  await ensureFactoryPortal();
+  const result = await getDb().execute(
+    `SELECT id, name, match_key, access_token FROM factory_portal_factories ORDER BY name`
+  );
+  return result.rows.map((raw) => {
+    const row = raw as Record<string, unknown>;
+    return {
+      id: String(row.id ?? ""),
+      name: String(row.name ?? ""),
+      match: String(row.match_key ?? ""),
+      token: String(row.access_token ?? ""),
+    };
+  });
+}
+
+/** Reuse one of the six factories when the supplier name matches. Otherwise create a portal factory and link. */
+export async function ensureSupplierFactory(supplierName: string): Promise<{ id: string; name: string } | { error: string }> {
+  const name = supplierName.trim();
+  if (!name) return { error: "ไม่มีชื่อ supplier" };
+  const known = matchFactoryId(name);
+  if (known) {
+    const factory = FACTORIES.find((item) => item.id === known);
+    return { id: known, name: factory?.name ?? known };
+  }
+  await ensureFactoryPortal();
+  const db = getDb();
+  const existing = await db.execute({
+    sql: `SELECT id, name FROM factory_portal_factories WHERE UPPER(TRIM(name)) = UPPER(?) OR UPPER(TRIM(match_key)) = UPPER(?)`,
+    args: [name, name],
+  });
+  const found = existing.rows[0] as Record<string, unknown> | undefined;
+  if (found) return { id: String(found.id), name: String(found.name ?? name) };
+
+  let id = factorySlug(name);
+  const taken = await db.execute({ sql: `SELECT id FROM factory_portal_factories WHERE id = ?`, args: [id] });
+  if (taken.rows.length > 0) id = `${id}-${randomBytes(2).toString("hex")}`;
+  await db.execute({
+    sql: `INSERT INTO factory_portal_factories (id, name, match_key, access_token) VALUES (?, ?, ?, ?)`,
+    args: [id, name, name, randomBytes(24).toString("hex")],
+  });
+  return { id, name };
+}
+
 function visibleOn(opened: string): string {
   return opened > VISIBLE_FROM ? opened : VISIBLE_FROM;
 }
@@ -111,15 +160,6 @@ export async function listFactoryPortalHome(): Promise<{
     WHERE d.status IN ('proposed', 'rejected')
     ORDER BY d.submitted_at DESC
   `);
-  const linkResult = await db.execute(
-    `SELECT id, name, access_token FROM factory_portal_factories`
-  );
-  const tokens = new Map<string, string>();
-  for (const row of linkResult.rows) {
-    const record = row as Record<string, unknown>;
-    tokens.set(String(record.id), String(record.access_token ?? ""));
-  }
-
   return {
     pending: (pendingResult.rows as Record<string, unknown>[]).map((row) => ({
       taskId: String(row.task_id ?? ""),
@@ -134,10 +174,10 @@ export async function listFactoryPortalHome(): Promise<{
       status: String(row.status ?? ""),
       submittedAt: row.submitted_at != null ? String(row.submitted_at) : null,
     })),
-    links: FACTORIES.map((factory) => ({
+    links: (await listPortalFactories()).map((factory) => ({
       id: factory.id,
-      name: factory.name,
-      url: `${portalBase()}/f/${tokens.get(factory.id) ?? ""}`,
+      name: SHORT_NAME[factory.id] ?? factory.name,
+      url: `${portalBase()}/f/${factory.token}`,
     })),
   };
 }

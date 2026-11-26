@@ -63,6 +63,7 @@ async function countSent(from: string, to: string): Promise<number> {
       JOIN task_details td ON td.task_id = t.id
       WHERE ${SQL_NOT_VOIDED}
         AND ${sqlInWarranty()}
+        AND instr(fs.sent_at, ':') > 0
         AND date(fs.sent_at) >= ?
         AND date(fs.sent_at) <= ?
     `,
@@ -74,7 +75,9 @@ async function countSent(from: string, to: string): Promise<number> {
 async function replies(from: string, to: string): Promise<{ approved: number; rejected: number; days: number[] }> {
   const result = await getDb().execute({
     sql: `
-      SELECT d.decision, date(fs.sent_at) AS sent_on, date(d.submitted_at) AS replied_on
+      SELECT d.decision,
+             CASE WHEN instr(COALESCE(fs.sent_at, ''), ':') > 0 THEN date(fs.sent_at) ELSE NULL END AS sent_on,
+             date(d.submitted_at) AS replied_on
       FROM factory_portal_decisions d
       JOIN tasks t ON t.id = d.task_id
       JOIN task_details td ON td.task_id = t.id
@@ -128,6 +131,7 @@ export async function getWeeklyKpis(): Promise<WeeklyKpiData> {
           AND ${sqlInWarranty()}
           AND bt.task_id IS NULL
           AND (d.task_id IS NULL OR d.status = 'waiting')
+          AND instr(fs.sent_at, ':') > 0
           AND julianday(?) - julianday(date(fs.sent_at)) > 14
       `,
       args: [today],

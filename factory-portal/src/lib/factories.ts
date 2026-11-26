@@ -101,19 +101,17 @@ export function matchFactoryId(supplierName: string | null | undefined): string 
 export async function listFactories(): Promise<FactoryRecord[]> {
   await ensurePortal();
   const result = await getDb().execute(
-    `SELECT id, name, match_key, access_token FROM factory_portal_factories`
+    `SELECT id, name, match_key, access_token FROM factory_portal_factories ORDER BY name`
   );
-  const byId = new Map<string, FactoryRecord>();
-  for (const row of result.rows) {
+  return result.rows.map((row) => {
     const record = row as Record<string, unknown>;
-    byId.set(String(record.id), {
+    return {
       id: String(record.id),
       name: String(record.name ?? ""),
       match: String(record.match_key ?? ""),
       accessToken: String(record.access_token ?? ""),
-    });
-  }
-  return FACTORIES.map((factory) => byId.get(factory.id)).filter((row): row is FactoryRecord => !!row);
+    };
+  });
 }
 
 export async function factoryByToken(token: string): Promise<FactoryRecord | null> {

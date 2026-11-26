@@ -3,7 +3,7 @@ import { bangkokDate } from "../bangkokDate";
 import { resolveFactorySkus, skuInSql } from "../factoryClaimSkus";
 import { SQL_NOT_VOIDED } from "../taskStatus";
 import { sqlInWarranty } from "../warrantyBuffer";
-import { listFactoryCatalog, matchFactoryId } from "./factoryPortalDecisions";
+import { ensureSupplierFactory, listFactoryCatalog, matchFactoryId } from "./factoryPortalDecisions";
 
 export type SkuFactoryStatus = "confirmed" | "excluded";
 
@@ -12,6 +12,7 @@ export interface SkuFactoryRow {
   model: string;
   pending: number;
   supplierName: string | null;
+  suggestedSupplierName: string | null;
   suggestedFactoryId: string | null;
   suggestedFactoryName: string | null;
   status: SkuFactoryStatus | null;
@@ -56,7 +57,18 @@ export async function confirmedSkuFactories(): Promise<Map<string, ConfirmedSkuF
   return map;
 }
 
-export async function listSkuFactoryRows(): Promise<{ pendingSkus: number; rows: SkuFactoryRow[] }> {
+export async function listPoSuppliers(): Promise<{ name: string }[]> {
+  const result = await getDb().execute(`
+    SELECT TRIM(supplier_name) AS name
+    FROM purchase_orders
+    WHERE supplier_name IS NOT NULL AND TRIM(supplier_name) != ''
+    GROUP BY TRIM(supplier_name)
+    ORDER BY name
+  `);
+  return result.rows.map((raw) => ({ name: String((raw as Record<string, unknown>).name ?? "") })).filter((row) => row.name);
+}
+
+export async function listSkuFactoryRows(): Promise<{ pendingSkus: number; rows: SkuFactoryRow[]; suppliers: { name: string }[] }> {
   await ensureTable();
   const db = getDb();
   const today = bangkokDate();
@@ -115,6 +127,7 @@ export async function listSkuFactoryRows(): Promise<{ pendingSkus: number; rows:
       model: String(row.model ?? sku),
       pending: 0,
       supplierName: null as string | null,
+      suggestedSupplierName: null as string | null,
       suggestedFactoryId: null as string | null,
       suggestedFactoryName: null as string | null,
       status: saved.get(sku)?.status ?? null,
@@ -132,29 +145,52 @@ export async function listSkuFactoryRows(): Promise<{ pendingSkus: number; rows:
     .filter((row) => row.status == null && !row.matched)
     .map((row) => {
       const suggestion = bestQty.get(row.sku);
-      const suggestedId = matchFactoryId(suggestion?.supplier ?? null);
+      const suggestedSupplier = suggestion?.supplier ?? null;
+      const suggestedId = matchFactoryId(suggestedSupplier);
       return {
         ...row,
-        supplierName: row.supplierName ?? suggestion?.supplier ?? null,
+        supplierName: row.supplierName ?? suggestedSupplier,
+        suggestedSupplierName: suggestedSupplier,
         suggestedFactoryId: suggestedId,
-        suggestedFactoryName: suggestedId ? names.get(suggestedId) ?? suggestedId : null,
+        suggestedFactoryName: suggestedId ? names.get(suggestedId) ?? suggestedSupplier : suggestedSupplier,
       };
     })
     .sort((a, b) => b.pending - a.pending || a.sku.localeCompare(b.sku));
 
-  return { pendingSkus: rows.length, rows };
+  return { pendingSkus: rows.length, rows, suppliers: await listPoSuppliers() };
+}
+
+/** Confirm every unmapped SKU that has a PO supplier suggestion. SKUs with no PO stay for a person to choose. */
+export async function confirmSuggestedSkuFactories(): Promise<{ confirmed: { sku: string; factoryId: string; supplier: string }[]; skipped: string[] }> {
+  const { rows } = await listSkuFactoryRows();
+  const confirmed: { sku: string; factoryId: string; supplier: string }[] = [];
+  const skipped: string[] = [];
+  for (const row of rows) {
+    const supplier = row.suggestedSupplierName?.trim() ?? "";
+    if (!supplier) {
+      skipped.push(row.sku);
+      continue;
+    }
+    const saved = await setSkuFactory({ sku: row.sku, supplierName: supplier });
+    if (!saved.ok) {
+      skipped.push(row.sku);
+      continue;
+    }
+    confirmed.push({ sku: row.sku, factoryId: saved.factoryId ?? "", supplier });
+  }
+  return { confirmed, skipped };
 }
 
 export async function setSkuFactory(input: {
   sku: string;
   factoryId?: string | null;
+  supplierName?: string | null;
   exclude?: boolean;
   reason?: string | null;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true; factoryId: string | null } | { ok: false; error: string }> {
   await ensureTable();
   const sku = input.sku.trim();
   if (!sku) return { ok: false, error: "ไม่มี SKU" };
-  const known = new Set(listFactoryCatalog().map((factory) => factory.id));
   if (input.exclude) {
     const reason = (input.reason ?? "").trim();
     if (reason.length < 3) return { ok: false, error: "ใส่เหตุผลที่ไม่เคลมโรงงาน" };
@@ -164,15 +200,21 @@ export async function setSkuFactory(input: {
             ON CONFLICT(sku) DO UPDATE SET status = 'excluded', factory_id = NULL, reason = excluded.reason, updated_at = excluded.updated_at`,
       args: [sku, reason, new Date().toISOString()],
     });
-    return { ok: true };
+    return { ok: true, factoryId: null };
   }
-  const factoryId = (input.factoryId ?? "").trim();
-  if (!known.has(factoryId)) return { ok: false, error: "เลือกโรงงานไม่ถูกต้อง" };
+  let factoryId = (input.factoryId ?? "").trim();
+  const supplierName = (input.supplierName ?? "").trim();
+  if (supplierName) {
+    const created = await ensureSupplierFactory(supplierName);
+    if ("error" in created) return { ok: false, error: created.error };
+    factoryId = created.id;
+  }
+  if (!factoryId) return { ok: false, error: "เลือก supplier จาก PO" };
   await getDb().execute({
     sql: `INSERT INTO sku_factory_map (sku, status, factory_id, reason, updated_at)
           VALUES (?, 'confirmed', ?, NULL, ?)
           ON CONFLICT(sku) DO UPDATE SET status = 'confirmed', factory_id = excluded.factory_id, reason = NULL, updated_at = excluded.updated_at`,
     args: [sku, factoryId, new Date().toISOString()],
   });
-  return { ok: true };
+  return { ok: true, factoryId };
 }

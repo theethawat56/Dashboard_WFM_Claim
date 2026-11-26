@@ -7,22 +7,17 @@ interface SkuFactoryRow {
   sku: string;
   model: string;
   pending: number;
-  suggestedFactoryId: string | null;
-  suggestedFactoryName: string | null;
+  suggestedSupplierName: string | null;
   supplierName: string | null;
 }
 
-const FACTORIES = [
-  { id: "midea", name: "MIDEA" },
-  { id: "jonr", name: "JONR" },
-  { id: "welland", name: "WELLAND" },
-  { id: "genhigh", name: "GENHIGH" },
-  { id: "stc", name: "STC" },
-  { id: "hizero", name: "HIZERO" },
-];
+interface SupplierOption {
+  name: string;
+}
 
 export function SkuFactoryMapCard() {
   const [rows, setRows] = useState<SkuFactoryRow[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reason, setReason] = useState<Record<string, string>>({});
@@ -30,27 +25,29 @@ export function SkuFactoryMapCard() {
   async function load(): Promise<void> {
     const response = await fetch("/api/dashboard/sku-factories");
     if (!response.ok) throw new Error("โหลด SKU ที่ยังไม่ผูกโรงงานไม่สำเร็จ");
-    const json = (await response.json()) as { rows: SkuFactoryRow[] };
+    const json = (await response.json()) as { rows: SkuFactoryRow[]; suppliers?: SupplierOption[] };
     setRows(json.rows);
+    setSuppliers(json.suppliers ?? []);
   }
 
   useEffect(() => {
     load().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "โหลดไม่สำเร็จ"));
   }, []);
 
-  async function save(sku: string, body: { factoryId?: string; exclude?: boolean; reason?: string }): Promise<void> {
+  async function save(sku: string, body: { supplierName?: string; exclude?: boolean; reason?: string }): Promise<void> {
     setError(null);
     const response = await fetch("/api/dashboard/sku-factories", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sku, ...body }),
     });
-    const json = (await response.json()) as { error?: string; rows?: SkuFactoryRow[] };
+    const json = (await response.json()) as { error?: string; rows?: SkuFactoryRow[]; suppliers?: SupplierOption[] };
     if (!response.ok) {
       setError(json.error ?? "บันทึกไม่สำเร็จ");
       return;
     }
     setRows(json.rows ?? []);
+    if (json.suppliers) setSuppliers(json.suppliers);
   }
 
   return (
@@ -58,7 +55,7 @@ export function SkuFactoryMapCard() {
       <CardHeader className="pb-2">
         <CardTitle className="text-base">SKU ที่ยังไม่ผูกโรงงาน {rows.length.toLocaleString("th-TH")} รายการ</CardTitle>
         <p className="text-sm text-slate-500">
-          ระบบเสนอโรงงานจาก supplier ที่มียอดสั่งมากสุดใน PO ต้องกดยืนยันก่อน งานจึงหลุดจากแถวยังไม่จับได้
+          เลือก supplier จาก PO ทั้งหมด กดยืนยันแล้วระบบสร้างโรงงานและลิงก์ตอบให้เอง ถ้าชื่อตรงกับโรงงานเดิม จะใช้ลิงก์เดิม
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -84,19 +81,19 @@ export function SkuFactoryMapCard() {
                     <td className="px-3 py-2 font-mono">{row.sku}</td>
                     <td className="px-3 py-2">{row.model}</td>
                     <td className="px-3 py-2 text-right">{row.pending.toLocaleString("th-TH")}</td>
-                    <td className="px-3 py-2">{row.suggestedFactoryName ?? row.supplierName ?? "ไม่มี PO"}</td>
+                    <td className="px-3 py-2">{row.suggestedSupplierName ?? "ไม่มี PO"}</td>
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap items-center gap-1">
                         <select
-                          className="h-8 rounded-md border border-slate-300 px-2 text-xs"
-                          defaultValue={row.suggestedFactoryId ?? ""}
+                          className="h-8 max-w-[280px] rounded-md border border-slate-300 px-2 text-xs"
+                          defaultValue={row.suggestedSupplierName ?? ""}
                           onChange={(event) => {
-                            if (event.target.value) save(row.sku, { factoryId: event.target.value }).catch(() => undefined);
+                            if (event.target.value) save(row.sku, { supplierName: event.target.value }).catch(() => undefined);
                           }}
                         >
-                          <option value="">เลือกโรงงาน</option>
-                          {FACTORIES.map((factory) => (
-                            <option key={factory.id} value={factory.id}>{factory.name}</option>
+                          <option value="">เลือก supplier</option>
+                          {suppliers.map((supplier) => (
+                            <option key={supplier.name} value={supplier.name}>{supplier.name}</option>
                           ))}
                         </select>
                         <input

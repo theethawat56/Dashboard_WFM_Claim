@@ -286,6 +286,8 @@ export interface FactoryClaimQueueRow {
   missing_serial: boolean;
   missing_symptom: boolean;
   ready: boolean;
+  days_waiting?: number | null;
+  sla?: "yellow" | "red" | null;
 }
 
 export interface FactoryClaimQueueData {
@@ -302,6 +304,7 @@ export interface FactoryClaimQueueData {
   blocked_clm: number;
   blocked_mnt: number;
   rows: FactoryClaimQueueRow[];
+  waiting_rows: FactoryClaimQueueRow[];
   shown: number;
 }
 

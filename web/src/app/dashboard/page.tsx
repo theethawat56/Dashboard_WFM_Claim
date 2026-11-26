@@ -25,6 +25,8 @@ import { FactoryOpenMonthCard } from "./_components/FactoryOpenMonthCard";
 import { ModelFactoryStatusCard } from "./_components/ModelFactoryStatusCard";
 import { SkuFactoryMapCard } from "./_components/SkuFactoryMapCard";
 import { WeeklyKpiRow } from "./_components/WeeklyKpiRow";
+import { DashboardFilterBar, DashboardFilterProvider } from "./_components/DashboardFilter";
+import { FactoryScoreboardCard } from "./_components/FactoryScoreboardCard";
 import { ClaimedModelsCard } from "./_components/ClaimedModelsCard";
 import type { DailyTrendRow, DailyTopSkuRow, ClaimCompOverall, ClaimedModelRow } from "@/types/dashboard";
 import { FilterBar } from "./_components/FilterBar";
@@ -692,6 +694,8 @@ export default function DashboardPage() {
       )}
 
       <main className="mx-auto max-w-[1440px] px-4 py-6 lg:px-6">
+        <DashboardFilterProvider>
+        <DashboardFilterBar />
         <Tabs
           value={activeTab}
           onValueChange={(v) => setActiveTab(v as typeof activeTab)}
@@ -707,6 +711,7 @@ export default function DashboardPage() {
 
           <TabsContent value="overview" className="space-y-6">
             <WeeklyKpiRow />
+            <FactoryScoreboardCard />
             <SkuFactoryMapCard />
             <div className="flex flex-wrap gap-2">
               {(
@@ -1063,6 +1068,7 @@ export default function DashboardPage() {
             </div>
           </TabsContent>
         </Tabs>
+        </DashboardFilterProvider>
       </main>
 
       {compDialogSku && (

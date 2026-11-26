@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isCompType } from "@/lib/compensation";
-import { listOpenCases, submitDecision } from "@/lib/cases";
+import { listOpenCases, replacementPoCost, submitDecision } from "@/lib/cases";
 import { factoryByToken } from "@/lib/factories";
 import { notifyDecision } from "@/lib/notify";
 
@@ -31,9 +31,17 @@ export async function POST(request: NextRequest) {
       if (!body.compType || !isCompType(body.compType)) {
         return NextResponse.json({ error: "Choose a compensation type." }, { status: 400 });
       }
-      amount = Number(body.amount);
-      if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000) {
-        return NextResponse.json({ error: "Enter an amount greater than 0 THB." }, { status: 400 });
+      if (body.compType === "replacement") {
+        const open = (await listOpenCases()).find((row) => row.id === body.taskId && row.factoryId === factory.id);
+        amount = open ? await replacementPoCost(open.sku) : null;
+        if (amount == null) {
+          return NextResponse.json({ error: "No PO cost is available for this replacement unit." }, { status: 400 });
+        }
+      } else {
+        amount = Number(body.amount);
+        if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000) {
+          return NextResponse.json({ error: "Enter an amount greater than 0 THB." }, { status: 400 });
+        }
       }
       note = String(body.note ?? "").trim().slice(0, 2000) || null;
     } else {

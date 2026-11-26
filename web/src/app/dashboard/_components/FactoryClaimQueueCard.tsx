@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { FactoryClaimQueueData, FactoryClaimQueueRow } from "@/types/dashboard";
+import { useDashboardFilter } from "./DashboardFilter";
 
 type QueueFilter = "all" | "ready" | "blocked";
 
@@ -16,11 +17,18 @@ export function FactoryClaimQueueCard({ onOpenTracking }: { onOpenTracking?: () 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<QueueFilter>("all");
+  const shared = useDashboardFilter();
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch("/api/dashboard/factory-queue")
+    const params = new URLSearchParams({
+      from: shared.from,
+      to: shared.to,
+      factory: shared.factory,
+      kind: shared.kind,
+    });
+    fetch(`/api/dashboard/factory-queue?${params}`)
       .then(async (res) => {
         if (!res.ok) throw new Error("โหลดคิวเคลมโรงงานไม่สำเร็จ");
         return (await res.json()) as FactoryClaimQueueData;
@@ -37,7 +45,7 @@ export function FactoryClaimQueueCard({ onOpenTracking }: { onOpenTracking?: () 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [shared.from, shared.to, shared.factory, shared.kind]);
 
   const rows = useMemo(() => {
     const list = data?.rows ?? [];
@@ -100,6 +108,14 @@ export function FactoryClaimQueueCard({ onOpenTracking }: { onOpenTracking?: () 
           ))}
         </div>
 
+        <QueueTable
+          title="รอคำตอบเกิน 14 วัน"
+          tone="violet"
+          rows={data?.waiting_rows ?? []}
+          loading={loading}
+          empty="ไม่มีงานที่ส่งแล้วและเลย 14 วัน"
+          sla
+        />
         <QueueTable title="CLM เคลม" tone="violet" rows={clmRows} loading={loading} empty={emptyLabel(data, filter, "claim")} />
         <QueueTable title="MNT ซ่อม" tone="sky" rows={mntRows} loading={loading} empty={emptyLabel(data, filter, "repair")} />
         {data && (data.pending_clm > clmRows.length || data.pending_mnt > mntRows.length) && filter === "all" && (
@@ -130,12 +146,14 @@ function QueueTable({
   rows,
   loading,
   empty,
+  sla = false,
 }: {
   title: string;
   tone: "violet" | "sky";
   rows: FactoryClaimQueueRow[];
   loading: boolean;
   empty: string;
+  sla?: boolean;
 }) {
   const head = tone === "violet" ? "text-violet-800" : "text-sky-800";
   return (
@@ -169,7 +187,7 @@ function QueueTable({
                 </td>
               </tr>
             ) : (
-              rows.map((row) => <QueueRow key={row.id} row={row} />)
+              rows.map((row) => <QueueRow key={row.id} row={row} sla={sla} />)
             )}
           </tbody>
         </table>
@@ -178,7 +196,7 @@ function QueueTable({
   );
 }
 
-function QueueRow({ row }: { row: FactoryClaimQueueRow }) {
+function QueueRow({ row, sla = false }: { row: FactoryClaimQueueRow; sla?: boolean }) {
   const gap = row.missing_serial && row.missing_symptom
     ? "ขาด S/N และอาการ"
     : row.missing_serial
@@ -204,13 +222,17 @@ function QueueRow({ row }: { row: FactoryClaimQueueRow }) {
       <td className="px-3 py-2">
         <span
           className={`inline-flex rounded-md border px-2 py-0.5 text-xs ${
-            row.ready
+            sla && row.sla === "red"
+              ? "border-red-300 bg-red-100 text-red-800"
+              : sla && row.sla === "yellow"
+                ? "border-amber-300 bg-amber-100 text-amber-900"
+              : row.ready
               ? "border-emerald-200 bg-emerald-50 text-emerald-800"
               : "border-red-200 bg-red-50 text-red-700"
           }`}
         >
-          {gap}
-          {row.is_closed ? "" : " · ยังเปิด"}
+          {sla && row.sla === "red" ? `เกิน 21 วัน · ${row.days_waiting ?? "—"} วัน` : sla && row.sla === "yellow" ? `เกิน 14 วัน · ${row.days_waiting ?? "—"} วัน` : gap}
+          {!sla && !row.is_closed ? " · ยังเปิด" : ""}
         </span>
       </td>
     </tr>

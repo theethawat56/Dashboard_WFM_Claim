@@ -1,7 +1,7 @@
 import { getDb } from "./db";
 import { thisYearRange } from "./bangkok";
 import { type CaseStatus, type CompType } from "./compensation";
-import { ensurePortal, matchFactoryId } from "./factories";
+import { ensurePortal, listFactories, matchFactoryId, type FactoryRecord } from "./factories";
 
 export type { CaseStatus, CompType };
 
@@ -20,6 +20,7 @@ export type PortalCase = {
   amount: number | null;
   note: string | null;
   reason: string | null;
+  replacementCost: number | null;
 };
 
 const WARRANTY_DAYS = 365;
@@ -65,14 +66,85 @@ function asStatus(decision: DecisionRow | undefined): CaseStatus {
   return "proposed";
 }
 
-function mapTask(row: Record<string, unknown>, decision: DecisionRow | undefined): PortalCase | null {
-  const factoryId = matchFactoryId(row.supplier_name != null ? String(row.supplier_name) : null);
+type SkuChoice = { status: string; factoryId: string | null };
+
+async function loadSkuChoices(): Promise<Map<string, SkuChoice>> {
+  await getDb().execute(`
+    CREATE TABLE IF NOT EXISTS sku_factory_map (
+      sku TEXT PRIMARY KEY,
+      status TEXT NOT NULL,
+      factory_id TEXT,
+      reason TEXT,
+      updated_at TEXT
+    )
+  `);
+  const result = await getDb().execute(`SELECT sku, status, factory_id FROM sku_factory_map`);
+  const map = new Map<string, SkuChoice>();
+  for (const raw of result.rows) {
+    const row = raw as Record<string, unknown>;
+    map.set(String(row.sku ?? "").trim(), {
+      status: String(row.status ?? ""),
+      factoryId: row.factory_id != null ? String(row.factory_id) : null,
+    });
+  }
+  return map;
+}
+
+function assignFactory(
+  row: Record<string, unknown>,
+  skuChoices: Map<string, SkuChoice>,
+  factories: FactoryRecord[]
+): string | null {
+  const sku = row.sku != null ? String(row.sku).trim() : "";
+  const choice = skuChoices.get(sku);
+  if (choice?.status === "excluded") return null;
+  if (choice?.status === "confirmed" && choice.factoryId) return choice.factoryId;
+  const supplier = row.supplier_name != null ? String(row.supplier_name) : "";
+  const known = matchFactoryId(supplier);
+  if (known) return known;
+  const upper = supplier.trim().toUpperCase();
+  if (!upper) return null;
+  const hit = factories.find(
+    (factory) => factory.name.trim().toUpperCase() === upper || factory.match.trim().toUpperCase() === upper
+  );
+  return hit?.id ?? null;
+}
+
+async function latestPoCosts(): Promise<Map<string, number>> {
+  const result = await getDb().execute(`
+    SELECT sku, unit_cost FROM (
+      SELECT l.sku AS sku, l.unit_cost AS unit_cost,
+             ROW_NUMBER() OVER (PARTITION BY l.sku ORDER BY p.po_date DESC, p.id DESC) AS rn
+      FROM purchase_order_lines l
+      JOIN purchase_orders p ON p.id = l.po_id
+      WHERE l.unit_cost IS NOT NULL AND l.unit_cost > 0 AND l.sku IS NOT NULL
+    )
+    WHERE rn = 1
+  `);
+  const costs = new Map<string, number>();
+  for (const raw of result.rows) {
+    const row = raw as Record<string, unknown>;
+    costs.set(String(row.sku ?? "").trim(), Number(row.unit_cost ?? 0));
+  }
+  return costs;
+}
+
+function mapTask(
+  row: Record<string, unknown>,
+  decision: DecisionRow | undefined,
+  skuChoices: Map<string, SkuChoice>,
+  factories: FactoryRecord[],
+  costs: Map<string, number>,
+  forcedFactoryId?: string
+): PortalCase | null {
+  const factoryId = forcedFactoryId ?? assignFactory(row, skuChoices, factories);
   if (!factoryId) return null;
   const days = row.days_from_register != null ? Number(row.days_from_register) : null;
+  const sku = row.sku != null ? String(row.sku).trim() : "";
   return {
     id: String(row.id ?? ""),
     taskNumber: String(row.task_number ?? ""),
-    sku: row.sku != null ? String(row.sku).trim() : "",
+    sku,
     model: row.product_model != null ? String(row.product_model).trim() : "",
     serial: row.product_serial != null ? String(row.product_serial).trim() : "",
     symptomOriginal: row.symptom != null ? String(row.symptom).trim() : "",
@@ -84,6 +156,7 @@ function mapTask(row: Record<string, unknown>, decision: DecisionRow | undefined
     amount: decision?.amount ?? null,
     note: decision?.note ?? null,
     reason: decision?.reason ?? null,
+    replacementCost: costs.get(sku) ?? null,
   };
 }
 
@@ -126,7 +199,7 @@ async function selectOpenCases(): Promise<PortalCase[]> {
         ${days} AS days_from_register
       FROM tasks t
       JOIN task_details td ON td.task_id = t.id
-      JOIN po_case_matches m ON m.task_id = t.id
+      LEFT JOIN po_case_matches m ON m.task_id = t.id
       LEFT JOIN (
         SELECT task_id FROM claim_comp_batch_tasks GROUP BY task_id
       ) bt ON bt.task_id = t.id
@@ -145,10 +218,21 @@ async function selectOpenCases(): Promise<PortalCase[]> {
     `,
     args: [year.from, year.to],
   });
-  const decisions = await decisionMap();
+  const [decisions, skuChoices, factories, costs] = await Promise.all([
+    decisionMap(),
+    loadSkuChoices(),
+    listFactories(),
+    latestPoCosts(),
+  ]);
   const cases: PortalCase[] = [];
   for (const row of result.rows) {
-    const mapped = mapTask(row as Record<string, unknown>, decisions.get(String((row as Record<string, unknown>).id)));
+    const mapped = mapTask(
+      row as Record<string, unknown>,
+      decisions.get(String((row as Record<string, unknown>).id)),
+      skuChoices,
+      factories,
+      costs
+    );
     if (mapped) cases.push(mapped);
   }
   return cases;
@@ -188,6 +272,7 @@ async function selectConfirmed(factoryId: string): Promise<PortalCase[]> {
     `,
     args: [factoryId, year.from, year.to],
   });
+  const [skuChoices, factories, costs] = await Promise.all([loadSkuChoices(), listFactories(), latestPoCosts()]);
   return (result.rows as Record<string, unknown>[]).map((row) => {
     const decision: DecisionRow = {
       decision: String(row.decision ?? ""),
@@ -197,11 +282,12 @@ async function selectConfirmed(factoryId: string): Promise<PortalCase[]> {
       reason: row.reason != null ? String(row.reason) : null,
       status: "confirmed",
     };
+    const sku = row.sku != null ? String(row.sku).trim() : "";
     return (
-      mapTask(row, decision) ?? {
+      mapTask(row, decision, skuChoices, factories, costs, factoryId) ?? {
         id: String(row.id ?? ""),
         taskNumber: String(row.task_number ?? ""),
-        sku: row.sku != null ? String(row.sku).trim() : "",
+        sku,
         model: row.product_model != null ? String(row.product_model).trim() : "",
         serial: row.product_serial != null ? String(row.product_serial).trim() : "",
         symptomOriginal: row.symptom != null ? String(row.symptom).trim() : "",
@@ -213,9 +299,15 @@ async function selectConfirmed(factoryId: string): Promise<PortalCase[]> {
         amount: decision.amount,
         note: decision.note,
         reason: decision.reason,
+        replacementCost: costs.get(sku) ?? null,
       }
     );
   });
+}
+
+export async function replacementPoCost(sku: string): Promise<number | null> {
+  const cost = (await latestPoCosts()).get(sku.trim());
+  return cost != null && cost > 0 ? cost : null;
 }
 
 export async function listOpenCases(): Promise<PortalCase[]> {
