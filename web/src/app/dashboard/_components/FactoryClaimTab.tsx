@@ -40,11 +40,13 @@ export function FactoryClaimTab() {
   const [kpis, setKpis] = useState<FactoryClaimKpis | null>(null);
   const [skuRows, setSkuRows] = useState<FactoryPoSkuRow[]>([]);
   const [pos, setPos] = useState<FactoryPoHeaderRow[]>([]);
-  const [matches, setMatches] = useState<FactoryMatchRow[]>([]);
-  const [matchTotal, setMatchTotal] = useState(0);
-  const [page, setPage] = useState(1);
+  const [clmMatches, setClmMatches] = useState<FactoryMatchRow[]>([]);
+  const [mntMatches, setMntMatches] = useState<FactoryMatchRow[]>([]);
+  const [clmTotal, setClmTotal] = useState(0);
+  const [mntTotal, setMntTotal] = useState(0);
+  const [pageClm, setPageClm] = useState(1);
+  const [pageMnt, setPageMnt] = useState(1);
   const [search, setSearch] = useState("");
-  const [type, setType] = useState<"all" | "repair" | "claim">("all");
   const [tier, setTier] = useState<PoMatchTier | "all">("all");
   const [inner, setInner] = useState<"summary" | "matches" | "pos" | "notes">("summary");
   const [syncing, setSyncing] = useState(false);
@@ -95,19 +97,28 @@ export function FactoryClaimTab() {
   }, [filterQs]);
 
   const loadMatches = useCallback(async () => {
-    const params = new URLSearchParams(filterQs);
-    params.set("view", "matches");
-    params.set("page", String(page));
-    params.set("limit", "50");
-    params.set("type", type);
-    params.set("tier", tier);
-    if (search.trim()) params.set("search", search.trim());
-    const res = await fetch(`/api/dashboard/factory-claims?${params}`);
-    if (!res.ok) throw new Error("โหลดรายการจับคู่ไม่สำเร็จ");
-    const json = await res.json();
-    setMatches(json.rows ?? []);
-    setMatchTotal(Number(json.total ?? 0));
-  }, [page, type, tier, search, filterQs]);
+    async function load(type: "claim" | "repair", page: number) {
+      const params = new URLSearchParams(filterQs);
+      params.set("view", "matches");
+      params.set("page", String(page));
+      params.set("limit", "50");
+      params.set("type", type);
+      params.set("tier", tier);
+      if (search.trim()) params.set("search", search.trim());
+      const res = await fetch(`/api/dashboard/factory-claims?${params}`);
+      if (!res.ok) throw new Error("โหลดรายการจับคู่ไม่สำเร็จ");
+      const json = await res.json();
+      return {
+        rows: (json.rows ?? []) as FactoryMatchRow[],
+        total: Number(json.total ?? 0),
+      };
+    }
+    const [clm, mnt] = await Promise.all([load("claim", pageClm), load("repair", pageMnt)]);
+    setClmMatches(clm.rows);
+    setClmTotal(clm.total);
+    setMntMatches(mnt.rows);
+    setMntTotal(mnt.total);
+  }, [pageClm, pageMnt, tier, search, filterQs]);
 
   useEffect(() => {
     loadKpisAndSummary().catch((e) => {
@@ -181,7 +192,8 @@ export function FactoryClaimTab() {
         <Kpi
           title="ยอดเสียหาย (ต้นทุน PO)"
           value={kpis ? money(kpis.damage_total) : "—"}
-          hint={kpis ? `บาท · ${kpis.damage_year} · ในประกัน · เฉพาะ CLM × ต้นทุนต่อหน่วย` : "บาท · ในประกัน · เฉพาะ CLM"}
+          secondary={kpis ? money(kpis.damage_mnt) : "—"}
+          hint={kpis ? `บาท · ${kpis.damage_year} · ในประกัน × ต้นทุนต่อหน่วย` : "บาท · ในประกัน × ต้นทุนต่อหน่วย"}
         />
         <Kpi
           title="ยอดเคลมรวม (ผลเคลม)"
@@ -193,8 +205,8 @@ export function FactoryClaimTab() {
           value={kpis ? money(kpis.remaining_total) : "—"}
           hint={
             kpis
-              ? `บาท · ยอดเสียหาย − ยอดเคลมรวมผลเคลม ${money(kpis.result_total)}`
-              : "บาท · ยอดเสียหาย − ยอดเคลมรวมหน้าผลเคลม"
+              ? `บาท · ยอดเสียหาย CLM ${money(kpis.damage_total)} − ยอดเคลมรวม ${money(kpis.result_total)}`
+              : "บาท · ยอดเสียหาย CLM − ยอดเคลมรวมหน้าผลเคลม"
           }
         />
         <Kpi title="PO ต่างประเทศ" value={kpis ? num(kpis.po_count) : "—"} hint={kpis?.last_synced_at ? `ซิงก์ล่าสุด ${kpis.last_synced_at}` : "ยังไม่ซิงก์"} />
@@ -207,7 +219,8 @@ export function FactoryClaimTab() {
             value={dateField}
             onChange={(e) => {
               setDateField(e.target.value as "repair" | "po");
-              setPage(1);
+              setPageClm(1);
+              setPageMnt(1);
               setLoading(true);
             }}
             className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-sm"
@@ -223,7 +236,8 @@ export function FactoryClaimTab() {
             value={dateFrom}
             onChange={(e) => {
               setDateFrom(e.target.value);
-              setPage(1);
+              setPageClm(1);
+              setPageMnt(1);
               setLoading(true);
             }}
             className="h-8 w-full rounded-md border border-slate-300 px-2 text-sm"
@@ -237,7 +251,8 @@ export function FactoryClaimTab() {
             min={dateFrom || undefined}
             onChange={(e) => {
               setDateTo(e.target.value);
-              setPage(1);
+              setPageClm(1);
+              setPageMnt(1);
               setLoading(true);
             }}
             className="h-8 w-full rounded-md border border-slate-300 px-2 text-sm"
@@ -251,7 +266,8 @@ export function FactoryClaimTab() {
             onClick={() => {
               setDateFrom("");
               setDateTo("");
-              setPage(1);
+              setPageClm(1);
+              setPageMnt(1);
               setLoading(true);
             }}
           >
@@ -292,7 +308,8 @@ export function FactoryClaimTab() {
             nameBySku={nameBySku}
             onChange={(next) => {
               setSelectedSkus(next);
-              setPage(1);
+              setPageClm(1);
+              setPageMnt(1);
               setLoading(true);
             }}
           />
@@ -302,7 +319,8 @@ export function FactoryClaimTab() {
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
-              setPage(1);
+              setPageClm(1);
+              setPageMnt(1);
             }}
             className="h-8 w-72 rounded-md border border-slate-300 px-3 text-sm"
           />
@@ -325,22 +343,25 @@ export function FactoryClaimTab() {
                     <th className="px-3 py-2 font-medium">สินค้า</th>
                     <th className="px-3 py-2 font-medium text-right">Qty PO</th>
                     <th className="px-3 py-2 font-medium text-right">ต้นทุน/หน่วย</th>
-                    <th className="px-3 py-2 font-medium text-right">งานที่จับคู่</th>
-                    <th className="px-3 py-2 font-medium text-right">Claim %</th>
-                    <th className="px-3 py-2 font-medium text-right">ยอดเสียหาย</th>
+                    <th className="px-3 py-2 font-medium text-right text-violet-800">งาน CLM</th>
+                    <th className="px-3 py-2 font-medium text-right text-violet-800">Claim %</th>
+                    <th className="px-3 py-2 font-medium text-right text-violet-800">ยอด CLM</th>
+                    <th className="px-3 py-2 font-medium text-right text-sky-800">งาน MNT</th>
+                    <th className="px-3 py-2 font-medium text-right text-sky-800">Repair %</th>
+                    <th className="px-3 py-2 font-medium text-right text-sky-800">ยอด MNT</th>
                     <th className="px-3 py-2 font-medium"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan={10} className="px-3 py-8 text-center text-slate-400">
+                      <td colSpan={13} className="px-3 py-8 text-center text-slate-400">
                         กำลังโหลด...
                       </td>
                     </tr>
                   ) : skuFiltered.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="px-3 py-8 text-center text-slate-400">
+                      <td colSpan={13} className="px-3 py-8 text-center text-slate-400">
                         ไม่พบข้อมูลของ SKU ที่เลือก — ลองเปลี่ยนตัวกรอง หรือกดซิงก์จาก Zort
                       </td>
                     </tr>
@@ -362,6 +383,11 @@ export function FactoryClaimTab() {
                           {r.claim_rate_pct != null ? `${r.claim_rate_pct.toFixed(2)}%` : "—"}
                         </td>
                         <td className="px-3 py-2 text-right font-medium">{money(r.damage_amount)}</td>
+                        <td className="px-3 py-2 text-right">{num(r.matched_mnt)}</td>
+                        <td className="px-3 py-2 text-right">
+                          {r.repair_rate_pct != null ? `${r.repair_rate_pct.toFixed(2)}%` : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium">{money(r.damage_mnt)}</td>
                         <td className="px-3 py-2">
                           <Button
                             variant="outline"
@@ -385,24 +411,13 @@ export function FactoryClaimTab() {
         <Card>
           <CardHeader className="pb-2">
             <div className="flex flex-wrap items-center gap-2">
-              <CardTitle className="text-base">งานซ่อม/เคลมที่จับคู่แล้ว</CardTitle>
-              <select
-                value={type}
-                onChange={(e) => {
-                  setType(e.target.value as typeof type);
-                  setPage(1);
-                }}
-                className="h-8 rounded-md border border-slate-300 px-2 text-sm"
-              >
-                <option value="all">ทุกประเภท</option>
-                <option value="repair">ซ่อม</option>
-                <option value="claim">เคลม</option>
-              </select>
+              <CardTitle className="text-base">งานที่จับคู่แล้ว แยก CLM กับ MNT</CardTitle>
               <select
                 value={tier}
                 onChange={(e) => {
                   setTier(e.target.value as typeof tier);
-                  setPage(1);
+                  setPageClm(1);
+                  setPageMnt(1);
                 }}
                 className="h-8 rounded-md border border-slate-300 px-2 text-sm"
               >
@@ -414,80 +429,23 @@ export function FactoryClaimTab() {
               </select>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto rounded-lg border border-slate-200">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-slate-200 bg-slate-50">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">งาน</th>
-                    <th className="px-3 py-2 font-medium">สินค้า</th>
-                    <th className="px-3 py-2 font-medium">วันอ้างอิง</th>
-                    <th className="px-3 py-2 font-medium text-right">วันในประกัน</th>
-                    <th className="px-3 py-2 font-medium">ทียร์</th>
-                    <th className="px-3 py-2 font-medium">PO</th>
-                    <th className="px-3 py-2 font-medium">ซัพพลายเออร์</th>
-                    <th className="px-3 py-2 font-medium text-right">ต้นทุน</th>
-                    <th className="px-3 py-2 font-medium text-right">Claim %</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {matches.map((m) => (
-                    <tr key={m.task_id} className="border-b border-slate-100">
-                      <td className="px-3 py-2">
-                        <div className="font-mono text-xs">{m.task_number}</div>
-                        <div className="text-xs text-slate-500">{m.task_type === "claim" ? "เคลม" : "ซ่อม"}</div>
-                      </td>
-                      <td className="px-3 py-2 max-w-[240px] text-xs" title={m.sku || undefined}>
-                        {m.product_name || m.sku || "—"}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs">
-                        {m.ref_date ?? "—"}
-                        <div className="text-slate-400">
-                          {m.ref_date_source === "warranty_start_date" ? "วันรับประกัน" : m.ref_date_source === "create_date" ? "วันสร้างงาน" : "ไม่มีวันที่"}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-right whitespace-nowrap text-xs">
-                        {m.days_to_repair != null ? `${num(m.days_to_repair)} วัน` : "—"}
-                      </td>
-                      <td className="px-3 py-2">
-                        <span className={`inline-flex rounded-md border px-2 py-0.5 text-xs ${TIER_CLASS[m.match_tier]}`}>
-                          {TIER_LABEL[m.match_tier]}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 font-mono text-xs">
-                        {m.po_number_out ?? "—"}
-                        <div className="text-slate-400">{m.po_date ?? ""} {m.po_status ?? ""} / {m.po_payment_status ?? ""}</div>
-                      </td>
-                      <td className="px-3 py-2 max-w-[180px] truncate text-xs" title={m.supplier_name}>
-                        {m.supplier_name || "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right">{m.unit_cost != null ? money(m.unit_cost) : "—"}</td>
-                      <td className="px-3 py-2 text-right">
-                        {m.claim_rate_pct != null ? `${m.claim_rate_pct.toFixed(2)}%` : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
-              <span>
-                {num(matchTotal)} รายการ · หน้า {page}
-              </span>
-              <div className="flex gap-2">
-                <Button variant="outline" className="h-8" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                  ก่อนหน้า
-                </Button>
-                <Button
-                  variant="outline"
-                  className="h-8"
-                  disabled={page * 50 >= matchTotal}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  ถัดไป
-                </Button>
-              </div>
-            </div>
+          <CardContent className="space-y-6">
+            <MatchList
+              title="CLM เคลม"
+              tone="violet"
+              rows={clmMatches}
+              total={clmTotal}
+              page={pageClm}
+              onPage={setPageClm}
+            />
+            <MatchList
+              title="MNT ซ่อม"
+              tone="sky"
+              rows={mntMatches}
+              total={mntTotal}
+              page={pageMnt}
+              onPage={setPageMnt}
+            />
           </CardContent>
         </Card>
       )}
@@ -563,9 +521,10 @@ export function FactoryClaimTab() {
               <li>กรองวันที่ได้ตามวันที่งานซ่อม หรือวันที่ PO</li>
               <li>ตัด FOC เสมอ (คำว่า FOC ใน PO Number / Reference)</li>
               <li>PO_number ที่แสดง = คอลัมน์ Reference ถ้าว่างใช้ PO Number</li>
-              <li>Claim Rate % = จำนวนงาน CLM ในประกันที่จับคู่กับ (PO, SKU) / จำนวนในบรรทัด PO ของ SKU นั้น × 100 ไม่รวมงานซ่อม MNT</li>
-              <li>ยอดเสียหายในตารางสรุป นับเหมือน KPI ยอดเสียหาย (ต้นทุน PO): เฉพาะงาน CLM ในประกันที่จับคู่ได้ × ต้นทุนต่อหน่วย ไม่รวม MNT และถ้าไม่กรองช่วงวันที่จะนับเฉพาะปีปัจจุบัน</li>
-              <li>ยอดเคลมรวม (ผลเคลม) = ตัวเลขเดียวกับช่องยอดเคลมรวมในหน้าผลเคลม (รวมทุกบันทึก ไม่กรองปี/ในประกัน) ยอดคงเหลือ = ยอดเสียหาย − ยอดเคลมรวมนี้</li>
+              <li>Claim % = จำนวนงาน CLM ในประกันที่จับคู่กับ (PO, SKU) / จำนวนในบรรทัด PO ของ SKU นั้น × 100</li>
+              <li>Repair % = จำนวนงาน MNT ในประกันที่จับคู่กับ (PO, SKU) / จำนวนในบรรทัด PO ของ SKU นั้น × 100</li>
+              <li>ยอด CLM และยอด MNT ในตารางสรุป นับแยกกัน แบบเดียวกับ KPI ยอดเสียหาย: งานในประกันที่จับคู่ได้ × ต้นทุนต่อหน่วย ถ้าไม่กรองช่วงวันที่จะนับเฉพาะปีปัจจุบัน</li>
+              <li>ยอดเคลมรวม (ผลเคลม) = ตัวเลขเดียวกับช่องยอดเคลมรวมในหน้าผลเคลม (รวมทุกบันทึก ไม่กรองปี/ในประกัน) ยอดคงเหลือ = ยอดเสียหาย CLM − ยอดเคลมรวมนี้</li>
               <li>Payment Term ไม่มีใน API Zort จึงเว้นว่าง</li>
               <li>ดึงเฉพาะซัพพลายเออร์ต่างประเทศที่เป็น Co./Ltd/Limited/PTE/Corporation ตัด FOC, Test Supplier, Harvey, ชื่อว่าง</li>
             </ul>
@@ -590,14 +549,137 @@ export function FactoryClaimTab() {
   );
 }
 
-function Kpi({ title, value, hint }: { title: string; value: string; hint: string }) {
+function MatchList({
+  title,
+  tone,
+  rows,
+  total,
+  page,
+  onPage,
+}: {
+  title: string;
+  tone: "violet" | "sky";
+  rows: FactoryMatchRow[];
+  total: number;
+  page: number;
+  onPage: (page: number) => void;
+}) {
+  const head = tone === "violet" ? "text-violet-800" : "text-sky-800";
+  return (
+    <div>
+      <div className={`mb-2 text-sm font-medium ${head}`}>
+        {title} · {num(total)} รายการ
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-slate-200">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-slate-200 bg-slate-50">
+            <tr>
+              <th className="px-3 py-2 font-medium">งาน</th>
+              <th className="px-3 py-2 font-medium">สินค้า</th>
+              <th className="px-3 py-2 font-medium">วันอ้างอิง</th>
+              <th className="px-3 py-2 font-medium text-right">วันในประกัน</th>
+              <th className="px-3 py-2 font-medium">ทียร์</th>
+              <th className="px-3 py-2 font-medium">PO</th>
+              <th className="px-3 py-2 font-medium">ซัพพลายเออร์</th>
+              <th className="px-3 py-2 font-medium text-right">ต้นทุน</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-3 py-6 text-center text-slate-400">
+                  ไม่มีงานในชุดนี้
+                </td>
+              </tr>
+            ) : (
+              rows.map((m) => (
+                <tr key={m.task_id} className="border-b border-slate-100">
+                  <td className="px-3 py-2 font-mono text-xs">{m.task_number}</td>
+                  <td className="max-w-[240px] px-3 py-2 text-xs" title={m.sku || undefined}>
+                    {m.product_name || m.sku || "—"}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-xs">
+                    {m.ref_date ?? "—"}
+                    <div className="text-slate-400">
+                      {m.ref_date_source === "warranty_start_date"
+                        ? "วันรับประกัน"
+                        : m.ref_date_source === "create_date"
+                          ? "วันสร้างงาน"
+                          : "ไม่มีวันที่"}
+                    </div>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right text-xs">
+                    {m.days_to_repair != null ? `${num(m.days_to_repair)} วัน` : "—"}
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={`inline-flex rounded-md border px-2 py-0.5 text-xs ${TIER_CLASS[m.match_tier]}`}>
+                      {TIER_LABEL[m.match_tier]}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 font-mono text-xs">
+                    {m.po_number_out ?? "—"}
+                    <div className="text-slate-400">
+                      {m.po_date ?? ""} {m.po_status ?? ""} / {m.po_payment_status ?? ""}
+                    </div>
+                  </td>
+                  <td className="max-w-[180px] truncate px-3 py-2 text-xs" title={m.supplier_name}>
+                    {m.supplier_name || "—"}
+                  </td>
+                  <td className="px-3 py-2 text-right">{m.unit_cost != null ? money(m.unit_cost) : "—"}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
+        <span>
+          {num(total)} รายการ · หน้า {page}
+        </span>
+        <div className="flex gap-2">
+          <Button variant="outline" className="h-8" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+            ก่อนหน้า
+          </Button>
+          <Button variant="outline" className="h-8" disabled={page * 50 >= total} onClick={() => onPage(page + 1)}>
+            ถัดไป
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Kpi({
+  title,
+  value,
+  secondary,
+  hint,
+}: {
+  title: string;
+  value: string;
+  secondary?: string;
+  hint: string;
+}) {
   return (
     <Card>
       <CardHeader className="pb-1">
         <CardTitle className="text-sm font-medium text-slate-500">{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="text-xl font-semibold text-slate-900">{value}</div>
+        {secondary != null ? (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <div className="text-[11px] font-medium text-violet-700">CLM</div>
+              <div className="text-lg font-semibold text-slate-900">{value}</div>
+            </div>
+            <div>
+              <div className="text-[11px] font-medium text-sky-700">MNT</div>
+              <div className="text-lg font-semibold text-slate-900">{secondary}</div>
+            </div>
+          </div>
+        ) : (
+          <div className="text-xl font-semibold text-slate-900">{value}</div>
+        )}
         {hint ? <div className="mt-1 text-xs text-slate-500">{hint}</div> : null}
       </CardContent>
     </Card>

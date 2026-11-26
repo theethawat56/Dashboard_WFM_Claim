@@ -153,7 +153,7 @@ export async function getFactoryKpis(
     args: matchArgs,
   });
 
-  const damageWhere = [...matchWhere, "m.task_type = 'claim'"];
+  const damageWhere = [...matchWhere];
   const damageArgs: (string | number)[] = [...matchArgs];
   if (!hasDateRange) {
     damageWhere.push(`COALESCE(
@@ -165,9 +165,13 @@ export async function getFactoryKpis(
   }
   const damage = await db.execute({
     sql: `
-      SELECT COALESCE(SUM(
-        CASE WHEN m.match_tier != 'gray' THEN COALESCE(m.unit_cost, 0) ELSE 0 END
-      ), 0) as damage_total
+      SELECT
+        COALESCE(SUM(
+          CASE WHEN m.task_type = 'claim' AND m.match_tier != 'gray' THEN COALESCE(m.unit_cost, 0) ELSE 0 END
+        ), 0) as damage_clm,
+        COALESCE(SUM(
+          CASE WHEN m.task_type = 'repair' AND m.match_tier != 'gray' THEN COALESCE(m.unit_cost, 0) ELSE 0 END
+        ), 0) as damage_mnt
       ${matchFromSql()}
       WHERE ${damageWhere.join(" AND ")}
     `,
@@ -177,7 +181,9 @@ export async function getFactoryKpis(
     `SELECT finished_at FROM sync_log WHERE sync_type = 'purchase_orders' ORDER BY id DESC LIMIT 1`
   );
   const t = (tiers.rows[0] ?? {}) as Record<string, unknown>;
-  const damageTotal = Number((damage.rows[0] as { damage_total?: number })?.damage_total ?? 0);
+  const damageRow = (damage.rows[0] ?? {}) as { damage_clm?: number; damage_mnt?: number };
+  const damageTotal = Number(damageRow.damage_clm ?? 0);
+  const damageMnt = Number(damageRow.damage_mnt ?? 0);
   const resultRes = await db.execute(
     `SELECT COALESCE(SUM(amount), 0) as result_total FROM claim_comp_batches`
   );
@@ -194,6 +200,7 @@ export async function getFactoryKpis(
     yellow: Number(t.yellow ?? 0),
     gray: Number(t.gray ?? 0),
     damage_total: damageTotal,
+    damage_mnt: damageMnt,
     result_total: resultTotal,
     remaining_total: damageTotal - resultTotal,
     damage_year: hasDateRange ? `${from ?? "…"}–${to ?? "…"}` : year,
@@ -258,7 +265,7 @@ export async function getFactoryPoSkuSummary(
     "m.po_id IS NOT NULL",
     SQL_NOT_VOIDED,
     inWarrantySql(),
-    "m.task_type = 'claim'",
+    "(m.task_type = 'claim' OR m.task_type = 'repair')",
   ];
   const matchArgs: (string | number)[] = [];
   const damageYearExpr = `COALESCE(
@@ -269,7 +276,7 @@ export async function getFactoryPoSkuSummary(
   const damageSql = hasDateRange
     ? "COALESCE(m.unit_cost, 0)"
     : `CASE WHEN ${damageYearExpr} = ? THEN COALESCE(m.unit_cost, 0) ELSE 0 END`;
-  if (!hasDateRange) matchArgs.push(year);
+  if (!hasDateRange) matchArgs.push(year, year);
   pushDateRange(matchWhere, matchArgs, matchDateColumn(dateField), from, to);
 
   const poWhere = [
@@ -298,12 +305,18 @@ export async function getFactoryPoSkuSummary(
       l.product_name,
       l.quantity,
       l.unit_cost,
-      COALESCE(m.matched_cases, 0) as matched_cases,
+      COALESCE(m.matched_clm, 0) as matched_cases,
+      COALESCE(m.matched_mnt, 0) as matched_mnt,
       CASE
-        WHEN l.quantity > 0 THEN ROUND(COALESCE(m.matched_cases, 0) * 100.0 / l.quantity, 2)
+        WHEN l.quantity > 0 THEN ROUND(COALESCE(m.matched_clm, 0) * 100.0 / l.quantity, 2)
         ELSE NULL
       END as claim_rate_pct,
-      COALESCE(m.damage_amount, 0) as damage_amount
+      CASE
+        WHEN l.quantity > 0 THEN ROUND(COALESCE(m.matched_mnt, 0) * 100.0 / l.quantity, 2)
+        ELSE NULL
+      END as repair_rate_pct,
+      COALESCE(m.damage_clm, 0) as damage_amount,
+      COALESCE(m.damage_mnt, 0) as damage_mnt
     FROM (
       SELECT l.po_id, l.sku,
              MAX(l.product_name) as product_name,
@@ -319,14 +332,16 @@ export async function getFactoryPoSkuSummary(
     JOIN purchase_orders p ON p.id = l.po_id
     LEFT JOIN (
       SELECT m.po_id, m.sku,
-             COUNT(*) as matched_cases,
-             SUM(${damageSql}) as damage_amount
+             SUM(CASE WHEN m.task_type = 'claim' THEN 1 ELSE 0 END) as matched_clm,
+             SUM(CASE WHEN m.task_type = 'repair' THEN 1 ELSE 0 END) as matched_mnt,
+             SUM(CASE WHEN m.task_type = 'claim' THEN ${damageSql} ELSE 0 END) as damage_clm,
+             SUM(CASE WHEN m.task_type = 'repair' THEN ${damageSql} ELSE 0 END) as damage_mnt
       ${matchFromSql()}
       WHERE ${matchWhere.join(" AND ")}
       GROUP BY m.po_id, m.sku
     ) m ON m.po_id = l.po_id AND m.sku = l.sku
     WHERE ${poWhere.join(" AND ")}
-    ORDER BY damage_amount DESC, p.po_date DESC
+    ORDER BY (COALESCE(m.damage_clm, 0) + COALESCE(m.damage_mnt, 0)) DESC, p.po_date DESC
   `,
     args: poArgs,
   });
@@ -344,8 +359,11 @@ export async function getFactoryPoSkuSummary(
     quantity: Number(row.quantity ?? 0),
     unit_cost: Number(row.unit_cost ?? 0),
     matched_cases: Number(row.matched_cases ?? 0),
+    matched_mnt: Number(row.matched_mnt ?? 0),
     claim_rate_pct: row.claim_rate_pct != null ? Number(row.claim_rate_pct) : null,
+    repair_rate_pct: row.repair_rate_pct != null ? Number(row.repair_rate_pct) : null,
     damage_amount: Number(row.damage_amount ?? 0),
+    damage_mnt: Number(row.damage_mnt ?? 0),
   }));
 }
 

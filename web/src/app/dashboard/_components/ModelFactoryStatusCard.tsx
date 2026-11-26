@@ -107,7 +107,7 @@ export function ModelFactoryStatusCard() {
       <CardHeader className="pb-2">
         <CardTitle className="text-base">รุ่นปีนี้ที่ต้องเคลมโรงงาน</CardTitle>
         <p className="mt-1 text-sm text-slate-500">
-          เฉพาะงานปี {bounds.year} ของ SKU โรงงาน นับ 1 งานเป็น 1 เครื่อง ส่งแล้วรอชดเชยคือกดส่งโรงงานในรายการงาน ส่วนได้ชดเชยแล้วคืองานที่บันทึกผลเคลมแล้ว
+          เฉพาะงานปี {bounds.year} ของ SKU โรงงาน นับ 1 งานเป็น 1 เครื่อง แยก CLM (เคลม) กับ MNT (ซ่อม) ในแถวเดียวกัน ส่งแล้วรอชดเชยคือกดส่งโรงงานในรายการงาน ส่วนได้ชดเชยแล้วคืองานที่บันทึกผลเคลมแล้ว
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -156,10 +156,10 @@ export function ModelFactoryStatusCard() {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat label="เครื่องทั้งหมด" value={data ? num(data.units) : "—"} />
-          <Stat label="ยังไม่ส่ง" value={data ? num(data.not_sent) : "—"} />
-          <Stat label="ส่งแล้วรอชดเชย" value={data ? num(data.sent_waiting) : "—"} />
-          <Stat label="ได้ชดเชยแล้ว" value={data ? num(data.compensated) : "—"} />
+          <Stat label="เครื่องทั้งหมด" clm={data ? num(data.units_clm) : "—"} mnt={data ? num(data.units_mnt) : "—"} />
+          <Stat label="ยังไม่ส่ง" clm={data ? num(data.not_sent_clm) : "—"} mnt={data ? num(data.not_sent_mnt) : "—"} />
+          <Stat label="ส่งแล้วรอชดเชย" clm={data ? num(data.sent_waiting_clm) : "—"} mnt={data ? num(data.sent_waiting_mnt) : "—"} />
+          <Stat label="ได้ชดเชยแล้ว" clm={data ? num(data.compensated_clm) : "—"} mnt={data ? num(data.compensated_mnt) : "—"} />
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -196,10 +196,14 @@ export function ModelFactoryStatusCard() {
               <thead className="sticky top-0 border-b border-slate-200 bg-slate-50">
                 <tr>
                   <th className="px-3 py-2 font-medium text-slate-700">รุ่น</th>
-                  <th className="px-3 py-2 text-right font-medium text-slate-700">จำนวนเครื่อง</th>
-                  <th className="px-3 py-2 text-right font-medium text-slate-700">ยังไม่ส่ง</th>
-                  <th className="px-3 py-2 text-right font-medium text-slate-700">รอชดเชย</th>
-                  <th className="px-3 py-2 text-right font-medium text-slate-700">ได้ชดเชย</th>
+                  <th className="px-3 py-2 text-right font-medium text-violet-800">CLM</th>
+                  <th className="px-3 py-2 text-right font-medium text-violet-800">CLM ยังไม่ส่ง</th>
+                  <th className="px-3 py-2 text-right font-medium text-violet-800">CLM รอชดเชย</th>
+                  <th className="px-3 py-2 text-right font-medium text-violet-800">CLM ได้ชดเชย</th>
+                  <th className="px-3 py-2 text-right font-medium text-sky-800">MNT</th>
+                  <th className="px-3 py-2 text-right font-medium text-sky-800">MNT ยังไม่ส่ง</th>
+                  <th className="px-3 py-2 text-right font-medium text-sky-800">MNT รอชดเชย</th>
+                  <th className="px-3 py-2 text-right font-medium text-sky-800">MNT ได้ชดเชย</th>
                   <th className="px-3 py-2 font-medium text-slate-700">สถานะ</th>
                 </tr>
               </thead>
@@ -207,10 +211,14 @@ export function ModelFactoryStatusCard() {
                 {rows.map((row) => (
                   <tr key={row.model} className="border-b border-slate-100 last:border-0">
                     <td className="px-3 py-2 text-slate-800">{row.model}</td>
-                    <td className="px-3 py-2 text-right font-medium text-slate-800">{num(row.units)}</td>
-                    <td className="px-3 py-2 text-right text-slate-700">{num(row.not_sent)}</td>
-                    <td className="px-3 py-2 text-right text-amber-800">{num(row.sent_waiting)}</td>
-                    <td className="px-3 py-2 text-right text-green-800">{num(row.compensated)}</td>
+                    <td className="px-3 py-2 text-right font-medium text-slate-800">{num(row.units_clm)}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{num(row.not_sent_clm)}</td>
+                    <td className="px-3 py-2 text-right text-amber-800">{num(row.sent_waiting_clm)}</td>
+                    <td className="px-3 py-2 text-right text-green-800">{num(row.compensated_clm)}</td>
+                    <td className="px-3 py-2 text-right font-medium text-slate-800">{num(row.units_mnt)}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{num(row.not_sent_mnt)}</td>
+                    <td className="px-3 py-2 text-right text-amber-800">{num(row.sent_waiting_mnt)}</td>
+                    <td className="px-3 py-2 text-right text-green-800">{num(row.compensated_mnt)}</td>
                     <td className="px-3 py-2">
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[row.status]}`}>
                         {STATUS_LABEL[row.status]}
@@ -227,11 +235,20 @@ export function ModelFactoryStatusCard() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, clm, mnt }: { label: string; clm: string; mnt: string }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
       <div className="text-xs text-slate-500">{label}</div>
-      <div className="text-lg font-semibold text-slate-900">{value}</div>
+      <div className="mt-1 grid grid-cols-2 gap-2">
+        <div>
+          <div className="text-[11px] font-medium text-violet-700">CLM</div>
+          <div className="text-lg font-semibold text-slate-900">{clm}</div>
+        </div>
+        <div>
+          <div className="text-[11px] font-medium text-sky-700">MNT</div>
+          <div className="text-lg font-semibold text-slate-900">{mnt}</div>
+        </div>
+      </div>
     </div>
   );
 }

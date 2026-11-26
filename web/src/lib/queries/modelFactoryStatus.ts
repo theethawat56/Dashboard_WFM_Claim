@@ -61,9 +61,17 @@ export async function getModelFactoryStatus(
       SELECT
         COALESCE(NULLIF(TRIM(td.product_model), ''), td.sku) AS model,
         COUNT(*) AS units,
+        SUM(CASE WHEN t.task_type = 'claim' THEN 1 ELSE 0 END) AS units_clm,
+        SUM(CASE WHEN t.task_type = 'repair' THEN 1 ELSE 0 END) AS units_mnt,
         SUM(CASE WHEN bt.task_id IS NULL AND fs.task_id IS NULL THEN 1 ELSE 0 END) AS not_sent,
+        SUM(CASE WHEN t.task_type = 'claim' AND bt.task_id IS NULL AND fs.task_id IS NULL THEN 1 ELSE 0 END) AS not_sent_clm,
+        SUM(CASE WHEN t.task_type = 'repair' AND bt.task_id IS NULL AND fs.task_id IS NULL THEN 1 ELSE 0 END) AS not_sent_mnt,
         SUM(CASE WHEN bt.task_id IS NULL AND fs.task_id IS NOT NULL THEN 1 ELSE 0 END) AS sent_waiting,
-        SUM(CASE WHEN bt.task_id IS NOT NULL THEN 1 ELSE 0 END) AS compensated
+        SUM(CASE WHEN t.task_type = 'claim' AND bt.task_id IS NULL AND fs.task_id IS NOT NULL THEN 1 ELSE 0 END) AS sent_waiting_clm,
+        SUM(CASE WHEN t.task_type = 'repair' AND bt.task_id IS NULL AND fs.task_id IS NOT NULL THEN 1 ELSE 0 END) AS sent_waiting_mnt,
+        SUM(CASE WHEN bt.task_id IS NOT NULL THEN 1 ELSE 0 END) AS compensated,
+        SUM(CASE WHEN t.task_type = 'claim' AND bt.task_id IS NOT NULL THEN 1 ELSE 0 END) AS compensated_clm,
+        SUM(CASE WHEN t.task_type = 'repair' AND bt.task_id IS NOT NULL THEN 1 ELSE 0 END) AS compensated_mnt
       FROM tasks t
       JOIN task_details td ON td.task_id = t.id
       LEFT JOIN (
@@ -82,15 +90,31 @@ export async function getModelFactoryStatus(
 
   const rows: ModelFactoryStatusRow[] = (result.rows as Record<string, unknown>[]).map((row) => {
     const units = Number(row.units ?? 0);
+    const unitsClm = Number(row.units_clm ?? 0);
+    const unitsMnt = Number(row.units_mnt ?? 0);
     const notSent = Number(row.not_sent ?? 0);
+    const notSentClm = Number(row.not_sent_clm ?? 0);
+    const notSentMnt = Number(row.not_sent_mnt ?? 0);
     const sentWaiting = Number(row.sent_waiting ?? 0);
+    const sentWaitingClm = Number(row.sent_waiting_clm ?? 0);
+    const sentWaitingMnt = Number(row.sent_waiting_mnt ?? 0);
     const compensated = Number(row.compensated ?? 0);
+    const compensatedClm = Number(row.compensated_clm ?? 0);
+    const compensatedMnt = Number(row.compensated_mnt ?? 0);
     return {
       model: String(row.model ?? ""),
       units,
+      units_clm: unitsClm,
+      units_mnt: unitsMnt,
       not_sent: notSent,
+      not_sent_clm: notSentClm,
+      not_sent_mnt: notSentMnt,
       sent_waiting: sentWaiting,
+      sent_waiting_clm: sentWaitingClm,
+      sent_waiting_mnt: sentWaitingMnt,
       compensated,
+      compensated_clm: compensatedClm,
+      compensated_mnt: compensatedMnt,
       status: sendStatus(units, sentWaiting, compensated),
     };
   });
@@ -100,9 +124,17 @@ export async function getModelFactoryStatus(
     from: range.from,
     to: range.to,
     units: rows.reduce((sum, row) => sum + row.units, 0),
+    units_clm: rows.reduce((sum, row) => sum + row.units_clm, 0),
+    units_mnt: rows.reduce((sum, row) => sum + row.units_mnt, 0),
     not_sent: rows.reduce((sum, row) => sum + row.not_sent, 0),
+    not_sent_clm: rows.reduce((sum, row) => sum + row.not_sent_clm, 0),
+    not_sent_mnt: rows.reduce((sum, row) => sum + row.not_sent_mnt, 0),
     sent_waiting: rows.reduce((sum, row) => sum + row.sent_waiting, 0),
+    sent_waiting_clm: rows.reduce((sum, row) => sum + row.sent_waiting_clm, 0),
+    sent_waiting_mnt: rows.reduce((sum, row) => sum + row.sent_waiting_mnt, 0),
     compensated: rows.reduce((sum, row) => sum + row.compensated, 0),
+    compensated_clm: rows.reduce((sum, row) => sum + row.compensated_clm, 0),
+    compensated_mnt: rows.reduce((sum, row) => sum + row.compensated_mnt, 0),
     rows,
   };
 }

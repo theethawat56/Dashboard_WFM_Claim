@@ -158,6 +158,7 @@ export interface FactoryClaimKpis {
   yellow: number;
   gray: number;
   damage_total: number;
+  damage_mnt: number;
   result_total: number;
   remaining_total: number;
   damage_year: string;
@@ -178,8 +179,11 @@ export interface FactoryPoSkuRow {
   quantity: number;
   unit_cost: number;
   matched_cases: number;
+  matched_mnt: number;
   claim_rate_pct: number | null;
+  repair_rate_pct: number | null;
   damage_amount: number;
+  damage_mnt: number;
 }
 
 export interface FactoryMatchRow {
@@ -286,9 +290,17 @@ export interface FactoryClaimQueueRow {
 
 export interface FactoryClaimQueueData {
   pending_count: number;
+  pending_clm: number;
+  pending_mnt: number;
   claimed_count: number;
+  claimed_clm: number;
+  claimed_mnt: number;
   ready_count: number;
+  ready_clm: number;
+  ready_mnt: number;
   blocked_count: number;
+  blocked_clm: number;
+  blocked_mnt: number;
   rows: FactoryClaimQueueRow[];
   shown: number;
 }
@@ -304,9 +316,17 @@ export type FactorySendStatus = "not_sent" | "waiting" | "compensated" | "mixed"
 export interface ModelFactoryStatusRow {
   model: string;
   units: number;
+  units_clm: number;
+  units_mnt: number;
   not_sent: number;
+  not_sent_clm: number;
+  not_sent_mnt: number;
   sent_waiting: number;
+  sent_waiting_clm: number;
+  sent_waiting_mnt: number;
   compensated: number;
+  compensated_clm: number;
+  compensated_mnt: number;
   status: FactorySendStatus;
 }
 
@@ -315,8 +335,16 @@ export interface ModelFactoryStatusData {
   from: string;
   to: string;
   units: number;
+  units_clm: number;
+  units_mnt: number;
   not_sent: number;
+  not_sent_clm: number;
+  not_sent_mnt: number;
   sent_waiting: number;
+  sent_waiting_clm: number;
+  sent_waiting_mnt: number;
   compensated: number;
+  compensated_clm: number;
+  compensated_mnt: number;
   rows: ModelFactoryStatusRow[];
 }
