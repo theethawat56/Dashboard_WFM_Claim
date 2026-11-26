@@ -2,6 +2,7 @@ import { getDb } from "../db";
 import { bangkokDate } from "../bangkokDate";
 import { resolveFactorySkus, skuInSql } from "../factoryClaimSkus";
 import { SQL_NOT_VOIDED } from "../taskStatus";
+import { sqlInWarranty } from "../warrantyBuffer";
 import { ensureClaimCompTables } from "./claimCompensations";
 import { ensureFactorySubmissions } from "./factorySubmissions";
 import type { FactorySendStatus, ModelFactoryStatusData, ModelFactoryStatusRow } from "@/types/dashboard";
@@ -79,6 +80,7 @@ export async function getModelFactoryStatus(
       ) bt ON bt.task_id = t.id
       LEFT JOIN factory_submissions fs ON fs.task_id = t.id
       WHERE ${SQL_NOT_VOIDED}
+        AND ${sqlInWarranty()}
         AND ${skuFilter.sql}
         AND ${created} >= ?
         AND ${created} <= ?

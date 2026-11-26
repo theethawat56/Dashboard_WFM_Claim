@@ -2,6 +2,7 @@ import { getDb } from "../db";
 import { bangkokDate } from "../bangkokDate";
 import { resolveFactorySkus, skuInSql } from "../factoryClaimSkus";
 import { SQL_NOT_VOIDED } from "../taskStatus";
+import { sqlInWarranty } from "../warrantyBuffer";
 import { ensureClaimCompTables } from "./claimCompensations";
 import { listFactoryCatalog, matchFactoryId } from "./factoryPortalDecisions";
 import type { FactoryCompareData, FactoryCompareRow } from "@/types/dashboard";
@@ -41,6 +42,7 @@ export async function getFactoryCompare(fromRaw?: string | null, toRaw?: string 
         SELECT task_id FROM claim_comp_batch_tasks GROUP BY task_id
       ) bt ON bt.task_id = t.id
       WHERE ${SQL_NOT_VOIDED}
+        AND ${sqlInWarranty()}
         AND ${skuFilter.sql}
         AND ${created} >= ?
         AND ${created} <= ?

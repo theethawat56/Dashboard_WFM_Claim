@@ -2,11 +2,10 @@ import { getDb } from "../db";
 import { resolveFactorySkus, skuInSql } from "../factoryClaimSkus";
 import { ensureNewColumns } from "../migrate";
 import { isTaskClosed, SQL_NOT_VOIDED } from "../taskStatus";
-import { sqlDaysToRepairExpr } from "../warrantyBuffer";
+import { sqlDaysToRepairExpr, sqlInWarranty } from "../warrantyBuffer";
 import { ensureClaimCompTables } from "./claimCompensations";
 import type { FactoryClaimQueueData, FactoryClaimQueueRow } from "@/types/dashboard";
 
-const WARRANTY_DAYS = 365;
 const ROW_LIMIT = 200;
 
 const MISSING_SERIAL_SQL = `LOWER(TRIM(COALESCE(td.product_serial, ''))) IN ('', '-', 'n/a', 'none', 'null')`;
@@ -18,7 +17,7 @@ export async function getFactoryClaimQueue(): Promise<FactoryClaimQueueData> {
   const db = getDb();
   const skuFilter = skuInSql("td.sku", resolveFactorySkus(null));
   const daysExpr = `(${sqlDaysToRepairExpr()})`;
-  const inWarranty = `${daysExpr} IS NOT NULL AND ${daysExpr} <= ${WARRANTY_DAYS}`;
+  const inWarranty = sqlInWarranty();
   const baseFrom = `
     FROM tasks t
     JOIN task_details td ON td.task_id = t.id

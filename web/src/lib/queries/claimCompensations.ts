@@ -1,6 +1,7 @@
 import { getDb } from "../db";
 import { ensureNewColumns } from "../migrate";
 import { SQL_NOT_VOIDED } from "../taskStatus";
+import { sqlBatchHasInWarrantyTask, sqlInWarranty } from "../warrantyBuffer";
 import type {
   ClaimCompBatch,
   ClaimCompSkuRow,
@@ -83,7 +84,7 @@ export async function getBatchesBySku(sku: string): Promise<ClaimCompBatch[]> {
   const db = getDb();
 
   const r = await db.execute({
-    sql: `SELECT * FROM claim_comp_batches WHERE sku = ? ORDER BY created_at DESC`,
+    sql: `SELECT * FROM claim_comp_batches b WHERE b.sku = ? AND ${sqlBatchHasInWarrantyTask("b.id")} ORDER BY b.created_at DESC`,
     args: [sku],
   });
 
@@ -92,7 +93,13 @@ export async function getBatchesBySku(sku: string): Promise<ClaimCompBatch[]> {
     const rr = row as Record<string, unknown>;
     const batchId = Number(rr.id);
     const tasks = await db.execute({
-      sql: `SELECT task_number FROM claim_comp_batch_tasks WHERE batch_id = ?`,
+      sql: `SELECT bt.task_number
+            FROM claim_comp_batch_tasks bt
+            JOIN tasks t ON t.id = bt.task_id
+            JOIN task_details td ON td.task_id = t.id
+            WHERE bt.batch_id = ?
+              AND ${SQL_NOT_VOIDED}
+              AND ${sqlInWarranty()}`,
       args: [batchId],
     });
     batches.push({
@@ -153,6 +160,7 @@ export async function getCompSkuSummary(): Promise<ClaimCompSkuRow[]> {
         WHERE bt2.batch_id = b.id LIMIT 1
       )
       WHERE b.sku IS NOT NULL AND TRIM(b.sku) != ''
+        AND ${sqlBatchHasInWarrantyTask("b.id")}
       GROUP BY b.sku
       ORDER BY total_amount DESC
     `,
@@ -169,7 +177,7 @@ export async function getCompSkuSummary(): Promise<ClaimCompSkuRow[]> {
         sql: `
           SELECT COUNT(*) as cnt FROM tasks t
           JOIN task_details td ON t.id = td.task_id
-          WHERE ${SQL_NOT_VOIDED} AND td.sku = ?
+          WHERE ${SQL_NOT_VOIDED} AND ${sqlInWarranty()} AND td.sku = ?
         `,
         args: [sku],
       }),
@@ -178,7 +186,11 @@ export async function getCompSkuSummary(): Promise<ClaimCompSkuRow[]> {
           SELECT COUNT(DISTINCT bt.task_number) as cnt
           FROM claim_comp_batch_tasks bt
           JOIN claim_comp_batches b ON b.id = bt.batch_id
+          JOIN tasks t ON t.id = bt.task_id
+          JOIN task_details td ON td.task_id = t.id
           WHERE b.sku = ?
+            AND ${SQL_NOT_VOIDED}
+            AND ${sqlInWarranty()}
         `,
         args: [sku],
       }),
@@ -215,12 +227,13 @@ export async function getCompOverall(): Promise<ClaimCompOverall> {
           COALESCE(SUM(CASE WHEN comp_type = 'spare_parts'  THEN amount ELSE 0 END), 0) as spare_parts,
           COALESCE(SUM(CASE WHEN comp_type = 'deduce'       THEN amount ELSE 0 END), 0) as deduce,
           COALESCE(SUM(CASE WHEN comp_type = 'replacement'  THEN amount ELSE 0 END), 0) as replacement
-        FROM claim_comp_batches
+        FROM claim_comp_batches b
+        WHERE ${sqlBatchHasInWarrantyTask("b.id")}
       `,
       args: [],
     }),
     db.execute({
-      sql: `SELECT COUNT(*) as cnt FROM tasks t WHERE ${SQL_NOT_VOIDED}`,
+      sql: `SELECT COUNT(*) as cnt FROM tasks t JOIN task_details td ON td.task_id = t.id WHERE ${SQL_NOT_VOIDED} AND ${sqlInWarranty()}`,
       args: [],
     }),
     db.execute({
@@ -231,6 +244,7 @@ export async function getCompOverall(): Promise<ClaimCompOverall> {
           SELECT bt2.task_id FROM claim_comp_batch_tasks bt2 WHERE bt2.batch_id = b.id LIMIT 1
         )
         WHERE b.sku IS NOT NULL AND TRIM(b.sku) != ''
+          AND ${sqlBatchHasInWarrantyTask("b.id")}
         GROUP BY b.sku
         ORDER BY total_amount DESC
         LIMIT 5
@@ -242,7 +256,11 @@ export async function getCompOverall(): Promise<ClaimCompOverall> {
   const t = totals.rows[0] as Record<string, unknown>;
 
   const compTaskCount = await db.execute({
-    sql: `SELECT COUNT(DISTINCT task_number) as cnt FROM claim_comp_batch_tasks`,
+    sql: `SELECT COUNT(DISTINCT bt.task_number) as cnt
+          FROM claim_comp_batch_tasks bt
+          JOIN tasks t ON t.id = bt.task_id
+          JOIN task_details td ON td.task_id = t.id
+          WHERE ${SQL_NOT_VOIDED} AND ${sqlInWarranty()}`,
     args: [],
   });
 
@@ -273,7 +291,7 @@ export async function getTasksForSku(sku: string): Promise<SkuTaskForBatch[]> {
       SELECT t.id as task_id, t.task_number, t.task_type, t.timestamp, t.is_reclaim
       FROM tasks t
       JOIN task_details td ON t.id = td.task_id
-      WHERE ${SQL_NOT_VOIDED} AND td.sku = ?
+      WHERE ${SQL_NOT_VOIDED} AND ${sqlInWarranty()} AND td.sku = ?
       ORDER BY t.timestamp DESC
     `,
     args: [sku],
@@ -311,7 +329,10 @@ export async function getClaimedModels(): Promise<ClaimedModelRow[]> {
       MAX(b.created_at) AS last_claimed_at
     FROM claim_comp_batches b
     JOIN claim_comp_batch_tasks bt ON bt.batch_id = b.id
-    LEFT JOIN task_details td ON td.task_id = bt.task_id
+    JOIN tasks t ON t.id = bt.task_id
+    JOIN task_details td ON td.task_id = t.id
+    WHERE ${SQL_NOT_VOIDED}
+      AND ${sqlInWarranty()}
     GROUP BY model
     ORDER BY last_claimed_at DESC
   `);

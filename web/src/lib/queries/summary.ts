@@ -1,6 +1,7 @@
 import { getDb } from "../db";
 import { ensureNewColumns } from "../migrate";
 import { SQL_NOT_VOIDED } from "../taskStatus";
+import { sqlInWarranty } from "../warrantyBuffer";
 import type { SummaryStats } from "@/types/dashboard";
 
 export async function getSummary(): Promise<SummaryStats> {
@@ -17,6 +18,7 @@ export async function getSummary(): Promise<SummaryStats> {
     FROM tasks t
     LEFT JOIN task_details td ON t.id = td.task_id
     WHERE ${SQL_NOT_VOIDED}
+      AND ${sqlInWarranty()}
   `);
   const row = r.rows[0] as Record<string, number | null>;
   return {

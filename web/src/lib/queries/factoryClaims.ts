@@ -3,7 +3,7 @@ import { ensureNewColumns } from "../migrate";
 import { resolveFactorySkus, skuInSql } from "../factoryClaimSkus";
 import { ensureClaimCompTables } from "./claimCompensations";
 import { SQL_NOT_VOIDED } from "../taskStatus";
-import { sqlDaysToRepairExpr } from "../warrantyBuffer";
+import { sqlBatchHasInWarrantyTask, sqlDaysToRepairExpr, sqlInWarranty } from "../warrantyBuffer";
 import type {
   FactoryClaimKpis,
   FactoryMatchRow,
@@ -11,8 +11,6 @@ import type {
   FactoryPoSkuRow,
   PoMatchTier,
 } from "@/types/dashboard";
-
-const WARRANTY_DAYS = 365;
 
 export type FactoryDateField = "po" | "repair";
 
@@ -45,8 +43,7 @@ function daysToRepairExpr(): string {
 }
 
 function inWarrantySql(): string {
-  const d = `(${daysToRepairExpr()})`;
-  return `${d} IS NOT NULL AND ${d} <= ${WARRANTY_DAYS}`;
+  return sqlInWarranty();
 }
 
 function repairDateExpr(): string {
@@ -185,7 +182,9 @@ export async function getFactoryKpis(
   const damageTotal = Number(damageRow.damage_clm ?? 0);
   const damageMnt = Number(damageRow.damage_mnt ?? 0);
   const resultRes = await db.execute(
-    `SELECT COALESCE(SUM(amount), 0) as result_total FROM claim_comp_batches`
+    `SELECT COALESCE(SUM(b.amount), 0) as result_total
+     FROM claim_comp_batches b
+     WHERE ${sqlBatchHasInWarrantyTask("b.id")}`
   );
   const resultTotal = Number(
     (resultRes.rows[0] as { result_total?: number })?.result_total ?? 0

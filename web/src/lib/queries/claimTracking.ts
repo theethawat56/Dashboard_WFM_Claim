@@ -2,7 +2,7 @@ import { getDb } from "../db";
 import { resolveFactorySkus, skuInSql } from "../factoryClaimSkus";
 import { ensureNewColumns } from "../migrate";
 import { isTaskClosed, SQL_NOT_VOIDED } from "../taskStatus";
-import { sqlDaysToRepairExpr, sqlShiftedWarrantyDate } from "../warrantyBuffer";
+import { sqlDaysToRepairExpr, sqlInWarranty, sqlShiftedWarrantyDate } from "../warrantyBuffer";
 import type {
   ClaimTrackingData,
   ClaimTrackingKpis,
@@ -95,6 +95,7 @@ export async function getClaimTracking(monthRaw?: string | null): Promise<ClaimT
       ) bt ON bt.task_id = t.id
       LEFT JOIN po_case_matches m ON m.task_id = t.id
       WHERE ${SQL_NOT_VOIDED}
+        AND ${sqlInWarranty()}
         AND ${skuFilter.sql}
         AND ${monthExpr} = ?
       ORDER BY t.timestamp DESC, t.task_number DESC
@@ -147,6 +148,7 @@ export async function getClaimTracking(monthRaw?: string | null): Promise<ClaimT
         JOIN tasks t ON t.id = bt.task_id
         JOIN task_details td ON td.task_id = t.id
         WHERE ${SQL_NOT_VOIDED}
+          AND ${sqlInWarranty()}
           AND ${skuFilter.sql}
           AND ${monthExpr} = ?
       )
@@ -178,7 +180,7 @@ export async function getClaimTracking(monthRaw?: string | null): Promise<ClaimT
     SELECT DISTINCT ${monthExpr} as m
     FROM tasks t
     JOIN task_details td ON td.task_id = t.id
-    WHERE ${SQL_NOT_VOIDED} AND t.timestamp IS NOT NULL AND ${skuFilter.sql}
+    WHERE ${SQL_NOT_VOIDED} AND ${sqlInWarranty()} AND t.timestamp IS NOT NULL AND ${skuFilter.sql}
     ORDER BY m DESC
   `,
     args: skuFilter.args,

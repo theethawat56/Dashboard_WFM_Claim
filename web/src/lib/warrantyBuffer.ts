@@ -1,6 +1,9 @@
 /** Shift warranty start earlier so displayed coverage begins 14 days before registration. */
 export const WARRANTY_START_BUFFER_DAYS = 14;
 
+/** A job stays in warranty through this many days after the shifted start. */
+export const WARRANTY_LIMIT_DAYS = 365;
+
 export function sqlShiftedWarrantyDate(
   column = "td.warranty_start_date"
 ): string {
@@ -28,6 +31,29 @@ export function sqlDaysToRepairExpr(
     THEN ${storedDaysCol} + ${WARRANTY_START_BUFFER_DAYS}
     ELSE NULL
   END`;
+}
+
+/** Dashboard rule: a dated age of 365 days or less, including negative ages. */
+export function sqlInWarranty(
+  timestampCol = "t.timestamp",
+  warrantyDateCol = "td.warranty_start_date",
+  storedDaysCol = "td.days_to_repair"
+): string {
+  const days = `(${sqlDaysToRepairExpr(timestampCol, warrantyDateCol, storedDaysCol)})`;
+  return `${days} IS NOT NULL AND ${days} <= ${WARRANTY_LIMIT_DAYS}`;
+}
+
+/** Keep a compensation batch when it still contains an in-warranty job. */
+export function sqlBatchHasInWarrantyTask(batchIdExpr = "b.id"): string {
+  return `EXISTS (
+    SELECT 1
+    FROM claim_comp_batch_tasks bt_w
+    JOIN tasks t ON t.id = bt_w.task_id
+    JOIN task_details td ON td.task_id = t.id
+    WHERE bt_w.batch_id = ${batchIdExpr}
+      AND t.status != 'VOIDED'
+      AND ${sqlInWarranty()}
+  )`;
 }
 
 export function shiftWarrantyStartDate(

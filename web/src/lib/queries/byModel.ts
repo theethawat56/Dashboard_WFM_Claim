@@ -1,5 +1,6 @@
 import { getDb } from "../db";
 import { SQL_NOT_VOIDED } from "../taskStatus";
+import { sqlInWarranty } from "../warrantyBuffer";
 import type { ByModelRow } from "@/types/dashboard";
 import type { RiskLevel } from "@/types/dashboard";
 
@@ -47,6 +48,7 @@ export async function getByModel(filters: ByModelFilters = {}): Promise<ByModelR
   const db = getDb();
   const conditions: string[] = [
     SQL_NOT_VOIDED,
+    sqlInWarranty(),
     "td.sku IS NOT NULL",
     "TRIM(td.sku) != ''",
   ];
@@ -118,7 +120,7 @@ async function getTopIssueForSku(
   dateFrom?: string,
   dateTo?: string
 ): Promise<string | null> {
-  const conditions = [SQL_NOT_VOIDED, "td.sku = ?", "td.issue_group IS NOT NULL", "TRIM(td.issue_group) != ''"];
+  const conditions = [SQL_NOT_VOIDED, sqlInWarranty(), "td.sku = ?", "td.issue_group IS NOT NULL", "TRIM(td.issue_group) != ''"];
   const args: (string | number)[] = [sku];
   applyDateConditions(conditions, args, dateFrom, dateTo);
   const r = await db.execute({
@@ -143,7 +145,7 @@ async function getPeakMonthForSku(
   dateFrom?: string,
   dateTo?: string
 ): Promise<string | null> {
-  const conditions = [SQL_NOT_VOIDED, "td.sku = ?", "t.timestamp IS NOT NULL"];
+  const conditions = [SQL_NOT_VOIDED, sqlInWarranty(), "td.sku = ?", "t.timestamp IS NOT NULL"];
   const args: (string | number)[] = [sku];
   applyDateConditions(conditions, args, dateFrom, dateTo);
   const r = await db.execute({

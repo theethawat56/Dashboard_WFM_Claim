@@ -1,7 +1,7 @@
 import { randomBytes } from "crypto";
 import { getDb } from "../db";
 import { bangkokDate } from "../bangkokDate";
-import { sqlDaysToRepairExpr } from "../warrantyBuffer";
+import { sqlDaysToRepairExpr, sqlInWarranty } from "../warrantyBuffer";
 import { ensureClaimCompTables, insertBatch } from "./claimCompensations";
 import type { CompType } from "@/types/dashboard";
 
@@ -423,9 +423,12 @@ export async function listFactoryPortalInsights(): Promise<FactoryPortalInsights
            d.amount, d.note, d.reason, d.status, d.submitted_at, t.timestamp, t.task_type
     FROM factory_portal_decisions d
     JOIN factory_portal_factories f ON f.id = d.factory_id
-    LEFT JOIN tasks t ON t.id = d.task_id
+    JOIN tasks t ON t.id = d.task_id
+    JOIN task_details td ON td.task_id = t.id
     WHERE d.submitted_at IS NOT NULL
       AND d.status IN ('proposed', 'rejected', 'confirmed', 'returned')
+      AND t.status != 'VOIDED'
+      AND ${sqlInWarranty()}
     ORDER BY d.submitted_at DESC
   `);
 

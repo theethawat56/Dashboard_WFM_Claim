@@ -61,7 +61,7 @@ export function FactoryCompareCard() {
       <CardHeader className="pb-2">
         <CardTitle className="text-base">เปรียบเทียบโรงงาน: ค้างเคลม และเคลมกลับมาได้</CardTitle>
         <p className="mt-1 text-sm text-slate-500">
-          เฉพาะ SKU โรงงาน นับตามวันสร้างงานในช่วงที่เลือก ค้างที่ต้องไปเคลมคืองานที่ยังไม่บันทึกผลเคลม เคลมกลับมาได้คืองานที่บันทึกผลเคลมแล้ว
+          เฉพาะ SKU โรงงานที่อยู่ในประกัน นับตามวันสร้างงานในช่วงที่เลือก ค้างที่ต้องไปเคลมคืองานที่ยังไม่บันทึกผลเคลม เคลมกลับมาได้คืองานที่บันทึกผลเคลมแล้ว
         </p>
       </CardHeader>
       <CardContent className="space-y-4">

@@ -1,5 +1,6 @@
 import { getDb } from "../db";
 import { SQL_NOT_VOIDED } from "../taskStatus";
+import { sqlInWarranty } from "../warrantyBuffer";
 
 export interface UnclaimedClaimsSummary {
   total: number;
@@ -46,6 +47,7 @@ export async function getUnclaimedClaimsSummary(
     FROM tasks t
     JOIN task_details td ON t.id = td.task_id
     WHERE ${SQL_NOT_VOIDED}
+      AND ${sqlInWarranty()}
       AND t.task_type = 'claim'
       AND t.timestamp >= ?
       ${whereExtraSql}
@@ -65,6 +67,7 @@ export async function getUnclaimedClaimsSummary(
     FROM tasks t
     JOIN task_details td ON t.id = td.task_id
     WHERE ${SQL_NOT_VOIDED}
+      AND ${sqlInWarranty()}
       AND t.task_type = 'claim'
       AND t.timestamp >= ?
       ${whereExtraSql}

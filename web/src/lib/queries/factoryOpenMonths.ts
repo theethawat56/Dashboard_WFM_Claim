@@ -1,6 +1,7 @@
 import { getDb } from "../db";
 import { resolveFactorySkus, skuInSql } from "../factoryClaimSkus";
 import { SQL_NOT_VOIDED } from "../taskStatus";
+import { sqlInWarranty } from "../warrantyBuffer";
 import { ensureClaimCompTables } from "./claimCompensations";
 import { ensureFactorySubmissions } from "./factorySubmissions";
 import { thisYearBounds } from "./modelFactoryStatus";
@@ -42,6 +43,7 @@ export async function getFactoryOpenMonths(): Promise<FactoryOpenMonthData> {
       ) bt ON bt.task_id = t.id
       LEFT JOIN factory_submissions fs ON fs.task_id = t.id
       WHERE ${SQL_NOT_VOIDED}
+        AND ${sqlInWarranty()}
         AND ${skuFilter.sql}
         AND ${created} >= ?
         AND ${created} <= ?
