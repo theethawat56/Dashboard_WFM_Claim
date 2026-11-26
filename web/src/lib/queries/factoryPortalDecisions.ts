@@ -18,7 +18,7 @@ const FACTORIES: { id: string; name: string; match: string }[] = [
   { id: "hizero", name: "HIZERO HK LIMITED", match: "HIZERO" },
 ];
 
-function matchFactoryId(supplierName: string | null | undefined): string | null {
+export function matchFactoryId(supplierName: string | null | undefined): string | null {
   const upper = (supplierName ?? "").toUpperCase();
   if (!upper.trim()) return null;
   for (const factory of FACTORIES) {
@@ -284,6 +284,14 @@ export type FactoryPortalInsights = {
   approvals: FactoryOutcomeRow[];
   rejections: FactoryOutcomeRow[];
 };
+
+export function listFactoryCatalog(): { id: string; name: string; shortName: string }[] {
+  return FACTORIES.map((factory) => ({
+    id: factory.id,
+    name: factory.name,
+    shortName: SHORT_NAME[factory.id] ?? factory.name,
+  }));
+}
 
 const SHORT_NAME: Record<string, string> = {
   midea: "MIDEA",

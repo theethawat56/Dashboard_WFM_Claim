@@ -330,6 +330,26 @@ export interface ModelFactoryStatusRow {
   status: FactorySendStatus;
 }
 
+export interface FactoryCompareRow {
+  id: string;
+  name: string;
+  shortName: string;
+  pending_clm: number;
+  pending_mnt: number;
+  returned_clm: number;
+  returned_mnt: number;
+}
+
+export interface FactoryCompareData {
+  from: string;
+  to: string;
+  pending_clm: number;
+  pending_mnt: number;
+  returned_clm: number;
+  returned_mnt: number;
+  rows: FactoryCompareRow[];
+}
+
 export interface FactoryOpenMonthRow {
   month: string;
   not_sent_clm: number;
