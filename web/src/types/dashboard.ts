@@ -330,6 +330,25 @@ export interface ModelFactoryStatusRow {
   status: FactorySendStatus;
 }
 
+export interface FactoryOpenMonthRow {
+  month: string;
+  not_sent_clm: number;
+  sent_clm: number;
+  not_sent_mnt: number;
+  sent_mnt: number;
+}
+
+export interface FactoryOpenMonthData {
+  year: number;
+  from: string;
+  to: string;
+  not_sent_clm: number;
+  sent_clm: number;
+  not_sent_mnt: number;
+  sent_mnt: number;
+  rows: FactoryOpenMonthRow[];
+}
+
 export interface ModelFactoryStatusData {
   year: number;
   from: string;

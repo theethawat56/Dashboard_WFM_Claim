@@ -20,6 +20,7 @@ import { ClaimSummaryCard } from "./_components/ClaimSummaryCard";
 import { FactoryClaimQueueCard } from "./_components/FactoryClaimQueueCard";
 import { FactoryPortalDecisionsCard } from "./_components/FactoryPortalDecisionsCard";
 import { FactoryPortalInsightsCard } from "./_components/FactoryPortalInsightsCard";
+import { FactoryOpenMonthCard } from "./_components/FactoryOpenMonthCard";
 import { ModelFactoryStatusCard } from "./_components/ModelFactoryStatusCard";
 import { ClaimedModelsCard } from "./_components/ClaimedModelsCard";
 import type { DailyTrendRow, DailyTopSkuRow, ClaimCompOverall, ClaimedModelRow } from "@/types/dashboard";
@@ -695,6 +696,7 @@ export default function DashboardPage() {
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
+            <FactoryOpenMonthCard />
             <ModelFactoryStatusCard />
             <FactoryClaimQueueCard onOpenTracking={() => setActiveTab("tracking")} />
             <KpiCards data={summary} />
