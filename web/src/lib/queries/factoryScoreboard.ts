@@ -23,6 +23,7 @@ export interface FactoryScoreRow {
   rejected: ScorePair;
   medianDays: ScoreMedian;
   bahtPerJob: ScoreMedian;
+  returnRate: number | null;
 }
 
 export interface FactoryScoreboard {
@@ -59,6 +60,8 @@ type Bucket = FactoryScoreRow & {
   replyMnt: number[];
   bahtClm: number[];
   bahtMnt: number[];
+  jobs: number;
+  compensatedJobs: number;
 };
 
 export async function getFactoryScoreboard(
@@ -127,10 +130,13 @@ export async function getFactoryScoreboard(
       rejected: { clm: 0, mnt: 0 },
       medianDays: { clm: null, mnt: null },
       bahtPerJob: { clm: null, mnt: null },
+      returnRate: null,
       replyClm: [],
       replyMnt: [],
       bahtClm: [],
       bahtMnt: [],
+      jobs: 0,
+      compensatedJobs: 0,
     };
     buckets.set(id, row);
     return row;
@@ -160,8 +166,10 @@ export async function getFactoryScoreboard(
       : matchFactoryId(record.supplier_name != null ? String(record.supplier_name) : null) ?? "unmatched";
     if (factoryFilter && factoryId !== factoryFilter) continue;
     const bucket = buckets.get(factoryId) ?? ensure(factoryId, factoryId, factoryId);
+    bucket.jobs += 1;
     const decision = record.decision != null ? String(record.decision) : "";
     const compensated = Number(record.compensated ?? 0) === 1;
+    if (compensated) bucket.compensatedJobs += 1;
     const sentAt = record.sent_at != null ? String(record.sent_at) : "";
     const onLink = Number(record.on_link ?? 0) === 1;
     const serial = record.product_serial != null ? String(record.product_serial) : "";
@@ -193,6 +201,7 @@ export async function getFactoryScoreboard(
         clm: row.bahtClm.length ? Math.round(row.bahtClm.reduce((sum, value) => sum + value, 0) / row.bahtClm.length) : null,
         mnt: row.bahtMnt.length ? Math.round(row.bahtMnt.reduce((sum, value) => sum + value, 0) / row.bahtMnt.length) : null,
       },
+      returnRate: row.jobs === 0 ? null : Math.round((row.compensatedJobs / row.jobs) * 1000) / 10,
     }))
     .filter((row) => {
       const total = row.ready.clm + row.ready.mnt + row.missing.clm + row.missing.mnt
@@ -210,6 +219,6 @@ export async function getFactoryScoreboard(
       id: factory.id,
       name: catalog.find((item) => item.id === factory.id)?.shortName ?? factory.name,
     })),
-    rows: rows.map(({ replyClm: _replyClm, replyMnt: _replyMnt, bahtClm: _bahtClm, bahtMnt: _bahtMnt, ...row }) => row),
+    rows: rows.map(({ replyClm: _replyClm, replyMnt: _replyMnt, bahtClm: _bahtClm, bahtMnt: _bahtMnt, jobs: _jobs, compensatedJobs: _compensatedJobs, ...row }) => row),
   };
 }

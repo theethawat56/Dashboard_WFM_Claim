@@ -24,6 +24,7 @@ interface ScoreRow {
   rejected: Pair;
   medianDays: Median;
   bahtPerJob: Median;
+  returnRate: number | null;
 }
 
 function num(value: number): string {
@@ -32,6 +33,10 @@ function num(value: number): string {
 
 function days(value: number | null): string {
   return value == null ? "—" : num(value);
+}
+
+function rate(value: number | null): string {
+  return value == null ? "—" : `${value.toFixed(1)}%`;
 }
 
 export function FactoryScoreboardCard() {
@@ -83,6 +88,7 @@ export function FactoryScoreboardCard() {
                 {["พร้อมส่ง", "ขาดข้อมูล", "รอตอบ", "ยอมรับ", "ปฏิเสธ", "วันตอบ", "บาท/งาน"].map((label) => (
                   <th key={label} className="px-2 py-2 text-center" colSpan={2}>{label}</th>
                 ))}
+                <th className="px-2 py-2 text-right" rowSpan={2}>อัตรากลับมา</th>
               </tr>
               <tr>
                 {Array.from({ length: 7 }).flatMap((_, index) => [
@@ -104,6 +110,7 @@ export function FactoryScoreboardCard() {
                   <td className="px-2 py-2 text-right">{days(row.medianDays.mnt)}</td>
                   <td className="px-2 py-2 text-right">{days(row.bahtPerJob.clm)}</td>
                   <td className="px-2 py-2 text-right">{days(row.bahtPerJob.mnt)}</td>
+                  <td className="px-2 py-2 text-right">{rate(row.returnRate)}</td>
                 </tr>
               ))}
             </tbody>

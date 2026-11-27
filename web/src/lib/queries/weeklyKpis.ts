@@ -3,12 +3,16 @@ import { bangkokDate } from "../bangkokDate";
 import { SQL_NOT_VOIDED } from "../taskStatus";
 import { sqlInWarranty } from "../warrantyBuffer";
 import { ensureClaimCompTables } from "./claimCompensations";
+import { listFactoryCatalog, listPortalFactories, matchFactoryId } from "./factoryPortalDecisions";
 import { syncFactorySentMarks } from "./factorySent";
+import { confirmedSkuFactories } from "./skuFactoryMap";
 
 const GOAL_START = "2026-11-26";
 const GOAL_END = "2027-01-26";
 const GOAL = 360;
 const STRETCH = 460;
+const HOLIDAYS = new Set(["2026-12-07", "2026-12-10", "2026-12-31", "2027-01-01"]);
+const DEFAULT_ACCEPT = 0.9;
 
 export interface WeeklyKpiPoint {
   label: string;
@@ -18,11 +22,29 @@ export interface WeeklyKpiPoint {
   ok: boolean | null;
 }
 
+export interface PaceTarget {
+  done: number;
+  target: number;
+}
+
+export interface WeeklyPace {
+  workingDaysLeft: number;
+  isWorkingDay: boolean;
+  goal: PaceTarget;
+  stretch: PaceTarget;
+  waiting: number;
+  acceptPercent: number;
+  action: "send" | "hurry";
+  sendMore: number;
+  hurryFactory: string | null;
+}
+
 export interface WeeklyKpiData {
   weekStart: string;
   weekEnd: string;
   cards: WeeklyKpiPoint[];
-  cumulative: { date: string; actual: number; goal: number; stretch: number }[];
+  pace: WeeklyPace;
+  cumulative: { date: string; daily: number; actual: number; goal: number; stretch: number }[];
 }
 
 function addDays(ymd: string, days: number): string {
@@ -39,6 +61,27 @@ function weekStart(ymd: string): string {
   const shift = weekday === 0 ? -6 : 1 - weekday;
   date.setUTCDate(date.getUTCDate() + shift);
   return date.toISOString().slice(0, 10);
+}
+
+function isWorkingDay(ymd: string): boolean {
+  const [year, month, day] = ymd.split("-").map(Number);
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return weekday !== 0 && weekday !== 6 && !HOLIDAYS.has(ymd);
+}
+
+function workingDaysInclusive(from: string, to: string): number {
+  if (to < from) return 0;
+  let count = 0;
+  for (let cursor = from; cursor <= to; cursor = addDays(cursor, 1)) {
+    if (isWorkingDay(cursor)) count += 1;
+  }
+  return count;
+}
+
+function dailyTarget(goal: number, doneBeforeToday: number, daysLeft: number, todayWorks: boolean): number {
+  const need = Math.max(0, goal - doneBeforeToday);
+  if (!todayWorks || daysLeft === 0) return 0;
+  return Math.ceil(need / daysLeft);
 }
 
 function daysBetween(from: string, to: string): number {
@@ -162,28 +205,57 @@ export async function getWeeklyKpis(): Promise<WeeklyKpiData> {
   const medianDays = median(reply.days);
   const medianPrev = median(replyPrev.days);
   const late = Number((overdue.rows[0] as { n?: number } | undefined)?.n ?? 0);
-  const span = Math.max(1, daysBetween(GOAL_START, GOAL_END));
   const byDay = new Map<string, number>();
   for (const raw of cumulativeRows.rows) {
     const row = raw as Record<string, unknown>;
     byDay.set(String(row.day ?? ""), Number(row.n ?? 0));
   }
+  const totalWorking = Math.max(1, workingDaysInclusive(GOAL_START, GOAL_END));
   let actual = 0;
+  let doneBeforeToday = 0;
   const cumulative: WeeklyKpiData["cumulative"] = [];
-  for (let cursor = GOAL_START; cursor <= today; cursor = addDays(cursor, 1)) {
-    actual += byDay.get(cursor) ?? 0;
-    const passed = daysBetween(GOAL_START, cursor);
+  const lastChartDay = today < GOAL_START ? GOAL_START : today > GOAL_END ? GOAL_END : today;
+  for (let cursor = GOAL_START; cursor <= lastChartDay; cursor = addDays(cursor, 1)) {
+    const daily = byDay.get(cursor) ?? 0;
+    actual += daily;
+    if (cursor < today) doneBeforeToday = actual;
+    const elapsed = workingDaysInclusive(GOAL_START, cursor);
     cumulative.push({
       date: cursor.slice(5),
+      daily,
       actual,
-      goal: Math.round((GOAL * passed) / span),
-      stretch: Math.round((STRETCH * passed) / span),
+      goal: Math.round((GOAL * elapsed) / totalWorking),
+      stretch: Math.round((STRETCH * elapsed) / totalWorking),
     });
   }
+  const todayWorks = isWorkingDay(today) && today >= GOAL_START && today <= GOAL_END;
+  const daysLeft = today > GOAL_END ? 0 : workingDaysInclusive(today < GOAL_START ? GOAL_START : today, GOAL_END);
+  const waiting = await waitingByFactory();
+  const campaign = await replies(GOAL_START, today);
+  const campaignTotal = campaign.approved + campaign.rejected;
+  const acceptRatio = campaignTotal === 0 ? DEFAULT_ACCEPT : campaign.approved / campaignTotal;
+  const goalTarget = dailyTarget(GOAL, doneBeforeToday, daysLeft, todayWorks);
+  const compensatedToday = byDay.get(today) ?? 0;
+  const gap = Math.max(0, goalTarget - compensatedToday);
+  const expected = waiting.total * acceptRatio;
+  const sendMore = expected >= gap
+    ? 0
+    : Math.ceil((gap - expected) / (acceptRatio > 0 ? acceptRatio : 1));
 
   return {
     weekStart: start,
     weekEnd: end,
+    pace: {
+      workingDaysLeft: daysLeft,
+      isWorkingDay: todayWorks,
+      goal: { done: compensatedToday, target: goalTarget },
+      stretch: { done: compensatedToday, target: dailyTarget(STRETCH, doneBeforeToday, daysLeft, todayWorks) },
+      waiting: waiting.total,
+      acceptPercent: Math.round(acceptRatio * 1000) / 10,
+      action: expected >= gap ? "hurry" : "send",
+      sendMore,
+      hurryFactory: waiting.topName,
+    },
     cards: [
       { label: "ส่งโรงงาน", current: sent, previous: sentPrev, target: "≥ 20", ok: sent >= 20 },
       { label: "โรงงานตอบ", current: replyTotal, previous: replyPrevTotal, target: "≥ 45", ok: replyTotal >= 45 },
@@ -211,6 +283,56 @@ export async function getWeeklyKpis(): Promise<WeeklyKpiData> {
     ],
     cumulative,
   };
+}
+
+async function waitingByFactory(): Promise<{ total: number; topName: string | null }> {
+  const result = await getDb().execute(`
+    SELECT t.id, td.sku, m.supplier_name
+    FROM tasks t
+    JOIN task_details td ON td.task_id = t.id
+    LEFT JOIN po_case_matches m ON m.task_id = t.id
+    LEFT JOIN factory_submissions fs ON fs.task_id = t.id
+    LEFT JOIN factory_portal_decisions d ON d.task_id = t.id
+    LEFT JOIN (SELECT task_id FROM claim_comp_batch_tasks GROUP BY task_id) comp ON comp.task_id = t.id
+    WHERE ${SQL_NOT_VOIDED}
+      AND ${sqlInWarranty()}
+      AND comp.task_id IS NULL
+      AND fs.task_id IS NOT NULL
+      AND (d.decision IS NULL OR d.decision NOT IN ('approved', 'rejected'))
+  `);
+  const assigned = await confirmedSkuFactories();
+  const names = new Map<string, string>();
+  for (const factory of listFactoryCatalog()) names.set(factory.id, factory.shortName);
+  for (const factory of await listPortalFactories()) {
+    if (!names.has(factory.id)) names.set(factory.id, factory.name);
+  }
+  names.set("unmatched", "ยังไม่จับได้");
+  const counts = new Map<string, number>();
+  const seen = new Set<string>();
+  for (const raw of result.rows) {
+    const row = raw as Record<string, unknown>;
+    const id = String(row.id ?? "");
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const sku = row.sku != null ? String(row.sku).trim() : "";
+    const choice = assigned.get(sku);
+    if (choice?.status === "excluded") continue;
+    const factoryId = choice?.status === "confirmed" && choice.factoryId
+      ? choice.factoryId
+      : matchFactoryId(row.supplier_name != null ? String(row.supplier_name) : null) ?? "unmatched";
+    counts.set(factoryId, (counts.get(factoryId) ?? 0) + 1);
+  }
+  let total = 0;
+  let topName: string | null = null;
+  let top = 0;
+  for (const [id, count] of counts) {
+    total += count;
+    if (count > top) {
+      top = count;
+      topName = names.get(id) ?? id;
+    }
+  }
+  return { total, topName };
 }
 
 async function bahtPerClaim(from: string, to: string): Promise<{ perTask: number | null; costShare: number | null }> {

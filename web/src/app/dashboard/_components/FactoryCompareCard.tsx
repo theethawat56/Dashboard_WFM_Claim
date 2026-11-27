@@ -10,12 +10,6 @@ function num(value: number): string {
   return value.toLocaleString("th-TH");
 }
 
-function rate(returned: number, pending: number): string {
-  const total = returned + pending;
-  if (total === 0) return "—";
-  return `${((returned / total) * 100).toFixed(1)}%`;
-}
-
 export function FactoryCompareCard() {
   const filter = useDashboardFilter();
   const [data, setData] = useState<FactoryCompareData | null>(null);
@@ -93,42 +87,6 @@ export function FactoryCompareCard() {
                   <Bar dataKey="returned" name="เคลมกลับมาได้" fill="#059669" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
-            </div>
-            <div className="overflow-auto rounded-lg border border-slate-200">
-              <table className="w-full min-w-[760px] text-left text-sm">
-                <thead className="border-b border-slate-200 bg-slate-50">
-                  <tr>
-                    <th className="px-3 py-2 font-medium text-slate-700">โรงงาน</th>
-                    <th className="px-3 py-2 text-right font-medium text-violet-800">CLM ค้าง</th>
-                    <th className="px-3 py-2 text-right font-medium text-sky-800">MNT ค้าง</th>
-                    <th className="px-3 py-2 text-right font-medium text-amber-800">รวมค้าง</th>
-                    <th className="px-3 py-2 text-right font-medium text-violet-800">CLM กลับมา</th>
-                    <th className="px-3 py-2 text-right font-medium text-sky-800">MNT กลับมา</th>
-                    <th className="px-3 py-2 text-right font-medium text-emerald-800">รวมกลับมา</th>
-                    <th className="px-3 py-2 text-right font-medium text-slate-700">อัตรากลับมา</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data?.rows ?? []).filter((row) => filter.factory === "all" || row.id === filter.factory).map((row) => {
-                    const pending = row.pending_clm + row.pending_mnt;
-                    const returned = row.returned_clm + row.returned_mnt;
-                    return (
-                      <tr key={row.id} className="border-b border-slate-100 last:border-0">
-                        <td className="px-3 py-2 text-slate-800" title={row.name}>
-                          {row.shortName}
-                        </td>
-                        <td className="px-3 py-2 text-right">{num(row.pending_clm)}</td>
-                        <td className="px-3 py-2 text-right">{num(row.pending_mnt)}</td>
-                        <td className="px-3 py-2 text-right font-medium text-amber-800">{num(pending)}</td>
-                        <td className="px-3 py-2 text-right">{num(row.returned_clm)}</td>
-                        <td className="px-3 py-2 text-right">{num(row.returned_mnt)}</td>
-                        <td className="px-3 py-2 text-right font-medium text-emerald-800">{num(returned)}</td>
-                        <td className="px-3 py-2 text-right">{rate(returned, pending)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
             </div>
           </>
         )}
